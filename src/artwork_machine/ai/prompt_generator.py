@@ -2,9 +2,10 @@
 Claude-powered creative prompt generator.
 
 Given audio features + artist metadata, Claude produces:
-  1. A rich image-generation prompt for the cassette label art
-  2. A style descriptor used by the compositor (colour palette, era, texture)
-  3. A motion descriptor used by the video engines (particle style, animation mood)
+  1. A photorealistic cassette-structure image prompt for the label art
+  2. Three layered canvas prompts for the drone parallax system
+     (far aerial · mid cassette overhead · near macro tape)
+  3. Style, palette, motion, and typography descriptors
 """
 
 from __future__ import annotations
@@ -19,43 +20,51 @@ from artwork_machine.audio.analyzer import AudioFeatures
 
 @dataclass
 class CreativeDirection:
-    # ── Image generation ─────────────────────────────────────────────────────
-    image_prompt: str          # Full positive prompt for Flux / SDXL
+    # ── Primary label art ─────────────────────────────────────────────────────
+    image_prompt: str          # Positive prompt — always features cassette structures
     negative_prompt: str       # Things to avoid
-    art_style: str             # e.g. "vaporwave oil painting", "lo-fi watercolour"
+    art_style: str             # e.g. "hyperrealistic macro photography"
+
+    # ── Canvas parallax layer prompts ─────────────────────────────────────────
+    canvas_far_prompt: str     # Aerial/drone shot background (depth layer 0)
+    canvas_mid_prompt: str     # Overhead cassette scene (depth layer 1)
+    canvas_near_prompt: str    # Extreme macro tape/shell texture (depth layer 2)
 
     # ── Colour palette (hex strings) ─────────────────────────────────────────
-    palette_primary: str       # e.g. "#1a0a2e"
-    palette_secondary: str     # e.g. "#c084fc"
-    palette_accent: str        # e.g. "#f0abfc"
-    palette_background: str    # e.g. "#0d0118"
+    palette_primary: str
+    palette_secondary: str
+    palette_accent: str
+    palette_background: str
 
     # ── Cassette physical style ───────────────────────────────────────────────
-    cassette_shell_colour: str   # hex colour for the plastic shell
+    cassette_shell_colour: str
     cassette_era: str            # "70s", "80s", "90s", "modern"
-    cassette_brand_name: str     # fictional brand to print on shell
+    cassette_brand_name: str
 
     # ── Motion / video feel ───────────────────────────────────────────────────
-    canvas_motion_style: str     # "slow drift", "glitch pulse", "liquid bloom"
+    canvas_motion_style: str     # drives animation preset, e.g. "liquid bloom"
     visualiser_style: str        # "spectrum bars", "radial waveform", "particle field"
 
     # ── Typography ───────────────────────────────────────────────────────────
-    label_font_style: str        # "bold serif", "hand-lettered", "futuristic mono"
-    label_tagline: str           # short evocative phrase for label (≤8 words)
+    label_font_style: str
+    label_tagline: str           # ≤8 words
 
 
 _SYSTEM_PROMPT = """\
-You are an award-winning creative director who specialises in music packaging and
-visual identity.  You produce precise, vivid creative briefs for AI image generators
-and motion graphics artists.
+You are an award-winning creative director specialising in music packaging,
+hyperrealistic CGI, and motion graphics.  You produce precise creative briefs
+for AI image generators.
 
-Your output must be a single valid JSON object — no markdown, no prose outside JSON.
-All hex colour values must be valid 6-digit hex strings starting with #.
-Keep every prompt under 300 tokens.
+RULES:
+- Output must be a single valid JSON object — no markdown, no prose outside JSON.
+- All hex colour values: valid 6-digit strings starting with #.
+- Every prompt must foreground CASSETTE TAPE as physical subject matter,
+  rendered with photographic realism (macro lenses, studio lighting, PBR materials).
+- Prompts must be vivid, specific, and under 280 tokens each.
 """
 
 _USER_TEMPLATE = """\
-Generate a complete visual creative direction for an album with the following profile:
+Generate a complete visual and motion creative direction for an album:
 
 ARTIST: {artist}
 ALBUM TITLE: {album}
@@ -67,36 +76,96 @@ ENERGY (0-1): {energy:.2f}
 BRIGHTNESS (spectral centroid Hz): {brightness:.0f}
 DYNAMIC RANGE (dB): {dynamic_range:.1f}
 
-Return a JSON object with exactly these keys:
+Return a JSON object with EXACTLY these keys:
+
 {{
   "image_prompt": "...",
   "negative_prompt": "...",
   "art_style": "...",
+
+  "canvas_far_prompt": "...",
+  "canvas_mid_prompt": "...",
+  "canvas_near_prompt": "...",
+
   "palette_primary": "#rrggbb",
   "palette_secondary": "#rrggbb",
   "palette_accent": "#rrggbb",
   "palette_background": "#rrggbb",
+
   "cassette_shell_colour": "#rrggbb",
   "cassette_era": "70s|80s|90s|modern",
   "cassette_brand_name": "...",
+
   "canvas_motion_style": "...",
   "visualiser_style": "...",
   "label_font_style": "...",
   "label_tagline": "..."
 }}
 
-Guidelines:
-- image_prompt: painterly, cinematic scene that emotionally captures the music.
-  Mention specific textures, lighting, mood.  Do NOT mention cassettes.
-- negative_prompt: list artefacts, styles, and quality issues to avoid.
-- art_style: 3-5 word label (used for compositor style-matching).
-- palette_*: colours that form a cohesive, striking palette fitting the mood.
-- cassette_shell_colour: the physical plastic colour (can be translucent, chrome, etc).
-- cassette_brand_name: invented retro-sounding brand (e.g. "Sonara", "Velvetone").
-- canvas_motion_style: one motion concept for the Spotify Canvas loop.
-- visualiser_style: one visualisation concept for the YouTube visualiser.
-- label_font_style: typography direction for the cassette label text.
-- label_tagline: ≤8-word evocative phrase to print on the cassette label.
+FIELD GUIDELINES:
+
+image_prompt:
+  A photorealistic still-life scene where CASSETTE TAPE is the hero subject.
+  Describe the cassette shell material (translucent, matte, chrome-plated),
+  the magnetic tape texture (brown ferric coating, metallic sheen), dramatic
+  lighting that matches the music mood, surface the cassette rests on,
+  background environment. Use camera/lens language: "shot with a 100mm macro
+  lens", "f/2.8 bokeh", "studio strobe with diffusion", "golden-hour rim light".
+  Palette: {palette_primary_hint} and {palette_secondary_hint}.
+  No text, no typography.
+
+negative_prompt:
+  Artefacts, blur, deformations, incorrect anatomy, watermarks, logos, text,
+  cartoonish rendering, flat colours, and any visual issues to avoid.
+
+art_style:
+  3-5 word label: the dominant aesthetic of image_prompt (e.g.
+  "hyperrealistic product photography", "cinematic macro CGI", "brutalist
+  industrial macro").
+
+canvas_far_prompt:
+  AERIAL DRONE PHOTOGRAPHY from 250-400 m altitude.  Camera looks straight
+  down or at a steep angle.  The ground scene should emotionally match the
+  music mood ({mood_tags}).  No cassettes visible at this scale — instead:
+  an abstract texture of land, water, urban geometry, or natural forms seen
+  from the air.  Cinematic colour grade in {palette_bg_hint} tones.
+  Ultra-photorealistic, 8K drone footage quality.
+
+canvas_mid_prompt:
+  OVERHEAD PRODUCT PHOTOGRAPHY looking straight down at a flat surface.
+  Magnetic cassette tape has been unspooled and arranged across the surface
+  in flowing, sinuous ribbons and spirals.  The cassette shell ({era} era,
+  {shell_hint} colour) is visible in one corner.  The tape catches the light,
+  showing its {palette_primary_hint} / {palette_secondary_hint} colour cast.
+  Photorealistic, Octane render quality, dramatic raking side-light.
+
+canvas_near_prompt:
+  EXTREME MACRO PHOTOGRAPHY — lens pressed against the cassette.
+  Fill the frame with the surface texture of the magnetic tape: brown ferric
+  oxide coating, micro-scratches, reflective sheen, edge detail of the tape
+  ribbon.  In the shallow depth of field, the cassette hub and spoke geometry
+  blur into bokeh.  Palette: warm {palette_accent_hint} highlights against
+  {palette_bg_hint} shadows.  Shot on a 200mm macro, f/4, studio key-light
+  from 45°.  No text.
+
+canvas_motion_style:
+  One vivid phrase describing the camera/animation mood for the canvas loop.
+  Choose a style that fits the music energy.
+  Examples: "slow liquid bloom", "glitch pulse orbit", "cinematic drift reveal",
+  "hypnotic fluid swirl", "electric parallax surge".
+
+visualiser_style:
+  "spectrum bars" | "radial waveform" | "particle field"
+
+label_font_style:
+  Typography direction for the cassette label: e.g. "condensed sans-serif
+  industrial", "hand-lettered retro italic", "futuristic mono stencil".
+
+label_tagline:
+  ≤8 evocative words to emboss on the cassette label.
+
+cassette_brand_name:
+  Invented retro-sounding tape brand (e.g. "Ferrox", "Chromalon", "Velvetone").
 """
 
 
@@ -106,21 +175,12 @@ def generate(
     album: str,
     client: anthropic.Anthropic | None = None,
 ) -> CreativeDirection:
-    """
-    Call Claude to generate a full :class:`CreativeDirection` for the album.
-
-    Parameters
-    ----------
-    features:
-        Analysed audio features.
-    artist, album:
-        Metadata provided by the user.
-    client:
-        Optional pre-built Anthropic client (useful for testing / DI).
-    """
+    """Call Claude to generate a full :class:`CreativeDirection`."""
     if client is None:
         client = anthropic.Anthropic()
 
+    # Pre-compute palette hints for the template (Claude sets them in JSON;
+    # these hints are for the human-readable guidelines section only)
     prompt = _USER_TEMPLATE.format(
         artist=artist,
         album=album,
@@ -131,18 +191,23 @@ def generate(
         energy=min(features.rms_mean * 10, 1.0),
         brightness=features.spectral_centroid_mean,
         dynamic_range=features.dynamic_range_db,
+        # Inline hints so Claude sees them in the field docs
+        palette_primary_hint="the primary palette colour",
+        palette_secondary_hint="the secondary palette colour",
+        palette_bg_hint="the background palette colour",
+        palette_accent_hint="the accent colour",
+        era="appropriate cassette era",
+        shell_hint="chosen shell colour",
     )
 
     message = client.messages.create(
         model="claude-opus-4-6",
-        max_tokens=1024,
+        max_tokens=1536,
         system=_SYSTEM_PROMPT,
         messages=[{"role": "user", "content": prompt}],
     )
 
     raw = message.content[0].text.strip()
-
-    # Strip markdown code fences if the model returns them
     if raw.startswith("```"):
         raw = raw.split("```")[1]
         if raw.startswith("json"):
@@ -154,6 +219,9 @@ def generate(
         image_prompt=data["image_prompt"],
         negative_prompt=data["negative_prompt"],
         art_style=data["art_style"],
+        canvas_far_prompt=data["canvas_far_prompt"],
+        canvas_mid_prompt=data["canvas_mid_prompt"],
+        canvas_near_prompt=data["canvas_near_prompt"],
         palette_primary=data["palette_primary"],
         palette_secondary=data["palette_secondary"],
         palette_accent=data["palette_accent"],

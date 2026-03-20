@@ -109,17 +109,17 @@ def run(opts: PipelineOptions) -> PipelineResult:
         )
         progress.update(task3, description="[green]✓ Label artwork generated")
 
-        # ── Stage 3b: Canvas background ───────────────────────────────────────
+        # ── Stage 3b: Canvas parallax layers (far / mid / near) ──────────────
+        canvas_layers: dict = {}
         if not opts.skip_canvas:
-            task3b = progress.add_task("Generating canvas background …", total=None)
-            canvas_bg_path = work / "canvas_bg.png"
-            image_generator.generate_canvas_background(
+            task3b = progress.add_task("Generating 3 canvas parallax layers (drone footage) …", total=None)
+            canvas_layers = image_generator.generate_canvas_layers(
                 direction,
-                canvas_bg_path,
+                work,
                 model=opts.image_model,
                 draft=opts.draft,
             )
-            progress.update(task3b, description="[green]✓ Canvas background generated")
+            progress.update(task3b, description="[green]✓ Canvas layers generated (far · mid · near)")
 
         # ── Stage 4: Cassette composition ─────────────────────────────────────
         task4 = progress.add_task("Compositing cassette artwork …", total=None)
@@ -136,9 +136,9 @@ def run(opts: PipelineOptions) -> PipelineResult:
         # ── Stage 5: Spotify Canvas ───────────────────────────────────────────
         canvas_output = out / "spotify_canvas.mp4"
         if not opts.skip_canvas:
-            task5 = progress.add_task("Rendering Spotify Canvas …", total=None)
+            task5 = progress.add_task("Rendering Spotify Canvas (drone parallax) …", total=None)
             canvas_gen.generate(
-                bg_image_path=canvas_bg_path,
+                canvas_layers=canvas_layers,
                 cassette_art_path=cassette_a_path,
                 direction=direction,
                 features=features,
@@ -147,7 +147,7 @@ def run(opts: PipelineOptions) -> PipelineResult:
                 output_path=canvas_output,
                 draft=opts.draft,
             )
-            progress.update(task5, description="[green]✓ Spotify Canvas rendered (8s loop)")
+            progress.update(task5, description="[green]✓ Spotify Canvas rendered (8s drone loop)")
 
         # ── Stage 6: YouTube Visualiser ───────────────────────────────────────
         viz_output = out / "youtube_visualizer.mp4"
