@@ -85,9 +85,9 @@ def _motion_camera(t: float, style: str, energy: float) -> CameraState:
     if "liquid" in s or "bloom" in s:
         # Slow graceful elliptical orbit + gentle breath zoom
         pan_x = 0.04 * math.sin(phase)
-        pan_y = 0.025 * math.cos(phase * 0.7)
+        pan_y = 0.025 * math.cos(phase)      # integer multiplier → seamless
         zoom  = 1.0 + 0.05 * (1 - math.cos(phase))
-        roll  = 0.008 * math.sin(phase * 0.5)
+        roll  = 0.008 * math.sin(phase)
 
     elif "glitch" in s or "pulse" in s:
         # Mostly static; sharp stutter kicks at quarter-period marks
@@ -95,7 +95,7 @@ def _motion_camera(t: float, style: str, energy: float) -> CameraState:
         kick   = 0.03 * max(0.0, math.sin(phase * 4) ** 3)
         sign   = 1 if math.sin(phase * 2) > 0 else -1
         pan_x  = base_x + kick * sign
-        pan_y  = 0.015 * math.cos(phase * 1.3)
+        pan_y  = 0.015 * math.cos(phase)     # integer multiplier → seamless
         zoom   = 1.03 + 0.04 * energy * abs(math.sin(phase * 4))
         roll   = 0.005 * math.sin(phase * 3)
 
@@ -116,14 +116,14 @@ def _motion_camera(t: float, style: str, energy: float) -> CameraState:
     elif "surge" in s or "electric" in s or "parallax" in s:
         # Fast oscillation; zoom reacts to audio energy
         pan_x = 0.06 * math.sin(phase * 2)
-        pan_y = 0.04 * math.cos(phase * 1.5)
+        pan_y = 0.04 * math.cos(phase * 2)   # integer multiplier → seamless
         zoom  = 1.0 + 0.06 * energy + 0.02 * math.cos(phase)
         roll  = 0.01 * math.sin(phase * 2)
 
     else:
         # Generic gentle drift
         pan_x = 0.03 * math.sin(phase)
-        pan_y = 0.02 * math.cos(phase * 0.8)
+        pan_y = 0.02 * math.cos(phase)        # integer multiplier → seamless
         zoom  = 1.0 + 0.04 * (1 - math.cos(phase))
         roll  = 0.0
 
