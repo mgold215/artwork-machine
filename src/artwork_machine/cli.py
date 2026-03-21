@@ -55,9 +55,9 @@ def main() -> None:
 )
 @click.option(
     "--model", "-m",
-    default="black-forest-labs/flux-1.1-pro",
+    default="black-forest-labs/FLUX.1-schnell",
     show_default=True,
-    help="Replicate image model ID",
+    help="Hugging Face model ID for image generation",
 )
 @click.option("--draft", is_flag=True, default=False, help="Draft quality (fast, low-res)")
 @click.option("--no-canvas", is_flag=True, default=False, help="Skip Spotify Canvas video")
@@ -184,12 +184,13 @@ def _validate_env() -> None:
     missing = []
     if not os.getenv("ANTHROPIC_API_KEY"):
         missing.append("ANTHROPIC_API_KEY")
-    if not os.getenv("REPLICATE_API_TOKEN"):
-        missing.append("REPLICATE_API_TOKEN")
+    if not os.getenv("HF_TOKEN"):
+        missing.append("HF_TOKEN")
 
     if missing:
         console.print(
             f"[bold red]Missing environment variables:[/bold red] {', '.join(missing)}\n"
-            "Copy [cyan].env.example[/cyan] → [cyan].env[/cyan] and add your keys."
+            "Copy [cyan].env.example[/cyan] → [cyan].env[/cyan] and add your keys.\n"
+            "Get a free HF_TOKEN at: huggingface.co → Settings → Access Tokens"
         )
         raise SystemExit(1)

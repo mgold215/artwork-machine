@@ -151,7 +151,7 @@ def analyse(audio_path: Path, *, visualiser_downsample: int = 512) -> AudioFeatu
 
     # ── Rhythm ───────────────────────────────────────────────────────────────
     tempo, beat_frames = librosa.beat.beat_track(y=y, sr=sr)
-    bpm = float(tempo)
+    bpm = float(np.atleast_1d(tempo)[0])
     beat_times = librosa.frames_to_time(beat_frames, sr=sr).tolist()
 
     # ── Chroma / key ─────────────────────────────────────────────────────────

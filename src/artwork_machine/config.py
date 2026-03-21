@@ -13,11 +13,11 @@ class Settings(BaseSettings):
 
     # ── AI services ──────────────────────────────────────────────────────────
     anthropic_api_key: str = Field(..., alias="ANTHROPIC_API_KEY")
-    replicate_api_token: str = Field(..., alias="REPLICATE_API_TOKEN")
+    hf_token: str = Field(..., alias="HF_TOKEN")
 
     # ── Image generation ─────────────────────────────────────────────────────
     image_model: str = Field(
-        default="black-forest-labs/flux-1.1-pro",
+        default="black-forest-labs/FLUX.1-schnell",
         alias="IMAGE_MODEL",
     )
 

@@ -60,7 +60,7 @@ class PipelineOptions:
     draft: bool = False
     skip_canvas: bool = False
     skip_visualizer: bool = False
-    image_model: str = "black-forest-labs/flux-1.1-pro"
+    image_model: str = "black-forest-labs/FLUX.1-schnell"
 
 
 def run(opts: PipelineOptions) -> PipelineResult:
