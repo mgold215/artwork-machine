@@ -79,8 +79,8 @@ def generate_label_art(
         f"Style: {direction.art_style}.  "
         f"Colour palette: {direction.palette_primary}, "
         f"{direction.palette_secondary}, {direction.palette_accent}.  "
-        "Hyper-detailed, photorealistic, award-winning album cover, "
-        "no text, no typography, no watermarks."
+        "Shot on camera, 4K cinema lens, photorealistic, hyperdetailed, "
+        "no CGI, no render, no text, no watermarks."
     )
 
     return _run_and_save(model, prompt, w, h, output_path)
@@ -143,8 +143,8 @@ def _generate_canvas_layer(
 
     full_prompt = (
         f"{prompt}  "
-        "Photorealistic, ultra-detailed, cinematic colour grade, "
-        "no text, no watermarks, no logos."
+        "Shot on camera, 4K cinema lens, photorealistic, hyperdetailed, "
+        "no CGI, no render, no text, no watermarks, no logos."
     )
 
     return _run_and_save(model, full_prompt, w, h, output_path)

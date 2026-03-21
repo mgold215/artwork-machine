@@ -51,15 +51,20 @@ class CreativeDirection:
 
 
 _SYSTEM_PROMPT = """\
-You are an award-winning creative director specialising in music packaging,
-hyperrealistic CGI, and motion graphics.  You produce precise creative briefs
-for AI image generators.
+You are an award-winning creative director specialising in music packaging and
+editorial photography.  Your visual language is informed by labels like KREAM
+and Afterlife, and films like Inception and Blade Runner 2049 — ominous,
+architectural, bleak, and hauntingly beautiful.
 
 RULES:
 - Output must be a single valid JSON object — no markdown, no prose outside JSON.
 - All hex colour values: valid 6-digit strings starting with #.
-- Every prompt must foreground CASSETTE TAPE as physical subject matter,
-  rendered with photographic realism (macro lenses, studio lighting, PBR materials).
+- Every prompt must foreground CASSETTE TAPE physically integrated into or placed
+  within ominous structures, brutalist architecture, or desolate environments.
+- All imagery must look like it was SHOT ON A REAL CAMERA — 4K cinema lens,
+  natural or practical lighting only.  Never CGI, never render, never digital art.
+- The same colour palette must carry through all three canvas layers as a
+  cohesive, unbroken visual world.
 - Prompts must be vivid, specific, and under 280 tokens each.
 """
 
@@ -105,48 +110,55 @@ Return a JSON object with EXACTLY these keys:
 FIELD GUIDELINES:
 
 image_prompt:
-  A photorealistic still-life scene where CASSETTE TAPE is the hero subject.
-  Describe the cassette shell material (translucent, matte, chrome-plated),
-  the magnetic tape texture (brown ferric coating, metallic sheen), dramatic
-  lighting that matches the music mood, surface the cassette rests on,
-  background environment. Use camera/lens language: "shot with a 100mm macro
-  lens", "f/2.8 bokeh", "studio strobe with diffusion", "golden-hour rim light".
+  A REAL CAMERA photograph — never CGI, never a render.  A cassette tape is
+  physically embedded in, resting against, or consumed by an ominous structure:
+  crumbling brutalist concrete, rain-soaked industrial flooring, a fog-covered
+  rooftop, a dimly lit stairwell, or a flooded underground space.  The scene
+  should feel bleak, cinematic, and slightly unsettling — the aesthetic of
+  KREAM or the Inception hallway sequence.  Specify: the cassette shell material
+  and colour, the exact surface or structure it inhabits, the ambient light
+  source (overcast skylight, single bare bulb, sodium vapour streetlight),
+  and camera/lens language ("shot on a Sony A7R V with a 85mm f/1.4",
+  "4K anamorphic lens flare", "shallow DOF, foreground blur").
   Palette: {palette_primary_hint} and {palette_secondary_hint}.
   No text, no typography.
 
 negative_prompt:
-  Artefacts, blur, deformations, incorrect anatomy, watermarks, logos, text,
-  cartoonish rendering, flat colours, and any visual issues to avoid.
+  CGI, 3D render, digital art, Octane render, computer generated, studio
+  lighting, clean backgrounds, colourful, bright, cheerful, cartoonish,
+  watermarks, logos, text, deformations, artefacts, oversaturated colours.
 
 art_style:
-  3-5 word label: the dominant aesthetic of image_prompt (e.g.
-  "hyperrealistic product photography", "cinematic macro CGI", "brutalist
-  industrial macro").
+  3-5 word label describing the dominant photographic aesthetic (e.g.
+  "ominous brutalist location photography", "bleak architectural macro",
+  "cinematic noir documentary").
 
 canvas_far_prompt:
-  AERIAL DRONE PHOTOGRAPHY from 250-400 m altitude.  Camera looks straight
-  down or at a steep angle.  The ground scene should emotionally match the
-  music mood ({mood_tags}).  No cassettes visible at this scale — instead:
-  an abstract texture of land, water, urban geometry, or natural forms seen
-  from the air.  Cinematic colour grade in {palette_bg_hint} tones.
-  Ultra-photorealistic, 8K drone footage quality.
+  AERIAL DRONE PHOTOGRAPHY shot straight down from 300-500 m.  The landscape
+  below is bleak and ominous — empty highways at night, fog-covered industrial
+  zones, brutalist housing blocks seen from above, or desolate terrain with
+  geometric shadows.  No cassettes at this scale.  The scene should feel like
+  the opening shot of a thriller film.  Colour grade: muted, desaturated,
+  {palette_bg_hint} tones.  Shot on a cinema drone camera, 4K, hyperrealistic.
 
 canvas_mid_prompt:
-  OVERHEAD PRODUCT PHOTOGRAPHY looking straight down at a flat surface.
-  Magnetic cassette tape has been unspooled and arranged across the surface
-  in flowing, sinuous ribbons and spirals.  The cassette shell ({era} era,
-  {shell_hint} colour) is visible in one corner.  The tape catches the light,
-  showing its {palette_primary_hint} / {palette_secondary_hint} colour cast.
-  Photorealistic, Octane render quality, dramatic raking side-light.
+  OVERHEAD CAMERA shot looking straight down.  A cassette tape ({era} era,
+  {shell_hint} colour shell) rests on an ominous surface — cracked concrete,
+  wet asphalt, rusted metal grating, or aged tile.  The magnetic tape has been
+  partially unspooled, flowing across the surface in dark ribbons.  The light
+  source is a single overhead practical lamp, casting hard shadows.
+  Colour palette: {palette_primary_hint} / {palette_secondary_hint}.
+  Shot on camera, 4K, photorealistic.  No CGI.
 
 canvas_near_prompt:
-  EXTREME MACRO PHOTOGRAPHY — lens pressed against the cassette.
-  Fill the frame with the surface texture of the magnetic tape: brown ferric
-  oxide coating, micro-scratches, reflective sheen, edge detail of the tape
-  ribbon.  In the shallow depth of field, the cassette hub and spoke geometry
-  blur into bokeh.  Palette: warm {palette_accent_hint} highlights against
-  {palette_bg_hint} shadows.  Shot on a 200mm macro, f/4, studio key-light
-  from 45°.  No text.
+  EXTREME MACRO PHOTOGRAPHY — camera pressed against the cassette shell where
+  it meets the surrounding structure (concrete, rust, wet stone).  Fill the
+  frame with the boundary between cassette and material: the cassette edge,
+  ferric tape texture, cracks or debris from the environment pressing in.
+  Light: a single raking practical source revealing micro-texture.
+  Palette: {palette_accent_hint} highlights, {palette_bg_hint} deep shadows.
+  Shot on a 100mm macro lens, f/2.8, natural or practical light only.
+  No text, no CGI.
 
 canvas_motion_style:
   One vivid phrase describing the camera/animation mood for the canvas loop.
