@@ -435,11 +435,23 @@ def _draw_text_overlay(
 # ── Video encode ───────────────────────────────────────────────────────────────
 
 def _encode_video(frames_dir: Path, output_path: Path, fps: int) -> None:
-    """Encode PNG frames to H.264 MP4 via ffmpeg."""
+    """Encode PNG frames to H.264 MP4 via ffmpeg (system or imageio-bundled)."""
+    import shutil
     import subprocess
 
+    # Prefer system ffmpeg; fall back to the binary bundled with imageio-ffmpeg
+    ffmpeg_bin = shutil.which("ffmpeg")
+    if ffmpeg_bin is None:
+        try:
+            import imageio_ffmpeg
+            ffmpeg_bin = imageio_ffmpeg.get_ffmpeg_exe()
+        except ImportError:
+            raise RuntimeError(
+                "ffmpeg not found. Install ffmpeg or `pip install imageio[ffmpeg]`."
+            )
+
     cmd = [
-        "ffmpeg", "-y",
+        ffmpeg_bin, "-y",
         "-framerate", str(fps),
         "-i", str(frames_dir / "frame_%05d.png"),
         "-c:v", "libx264",
