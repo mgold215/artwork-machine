@@ -2,7 +2,5 @@
 builder = "nixpacks"
 
 [deploy]
-# artwork-machine is a CLI worker — no web server needed.
-# Run with: railway run artwork-machine generate <file> --artist "X" --album "Y"
-startCommand = "python -c \"import time; print('artwork-machine worker ready'); [time.sleep(3600) for _ in iter(int, 1)]\""
-restartPolicyType = "never"
+startCommand = "python app.py"
+restartPolicyType = "on_failure"
