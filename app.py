@@ -233,38 +233,68 @@ HTML = """<!DOCTYPE html>
         data.set(k, form.querySelector('[name="' + k + '"]').checked ? 'true' : 'false');
       });
 
-      // Use XHR instead of fetch — more reliable for large file uploads in Safari
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', '/generate');
+      // Read the file first via FileReader to confirm it's accessible
+      // (iCloud Drive files can appear local but be unreadable by the browser sandbox)
+      const audioFile = form.querySelector('[name="audio"]').files[0];
+      if (!audioFile) { showError('No file selected.'); return; }
 
-      // Show upload progress
-      xhr.upload.onprogress = function(ev) {
-        if (ev.lengthComputable) {
-          const pct = Math.round((ev.loaded / ev.total) * 100);
-          statusEl.textContent = 'Uploading… ' + pct + '%';
-        }
+      statusEl.textContent = 'Reading file…';
+
+      const reader = new FileReader();
+      reader.onerror = function() {
+        showError('Cannot read this file. If it is stored in iCloud Drive, open Finder, right-click the file, and choose "Download Now" — then try again.');
+        btn.disabled = false;
+        btn.textContent = 'Generate';
       };
 
-      xhr.onload = function() {
-        if (xhr.status !== 200) {
-          showError('Server error: ' + xhr.status);
-          return;
-        }
-        let json;
-        try { json = JSON.parse(xhr.responseText); } catch(ex) {
-          showError('Bad response from server');
-          return;
-        }
-        if (json.error) { showError(json.error); return; }
-        statusEl.textContent = 'Pipeline running — this takes a few minutes…';
-        pollTimer = setInterval(function() { poll(json.job_id); }, 4000);
+      reader.onload = function(ev) {
+        // File is readable — rebuild FormData with the raw bytes so XHR can send it reliably
+        const blob = new Blob([ev.target.result], { type: audioFile.type || 'audio/wav' });
+        const fd = new FormData();
+        fd.append('audio', blob, audioFile.name);
+        ['artist','album'].forEach(function(k) {
+          fd.append(k, data.get(k));
+        });
+        ['skip_canvas','skip_short','skip_visualizer','draft_mode'].forEach(function(k) {
+          fd.append(k, data.get(k));
+        });
+
+        statusEl.textContent = 'Uploading… 0%';
+
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', '/generate');
+
+        xhr.upload.onprogress = function(ev) {
+          if (ev.lengthComputable) {
+            const pct = Math.round((ev.loaded / ev.total) * 100);
+            statusEl.textContent = 'Uploading… ' + pct + '%';
+          }
+        };
+
+        xhr.onload = function() {
+          if (xhr.status !== 200) {
+            showError('Server error: ' + xhr.status);
+            return;
+          }
+          let json;
+          try { json = JSON.parse(xhr.responseText); } catch(ex) {
+            showError('Bad response from server');
+            return;
+          }
+          if (json.error) { showError(json.error); return; }
+          statusEl.textContent = 'Pipeline running — this takes a few minutes…';
+          pollTimer = setInterval(function() { poll(json.job_id); }, 4000);
+        };
+
+        xhr.onerror = function() {
+          showError('Network error during upload. Check your connection and try again.');
+        };
+
+        xhr.send(fd);
       };
 
-      xhr.onerror = function() {
-        showError('Upload failed — check your connection and try again');
-      };
-
-      xhr.send(data);
+      // Trigger the file read — this will fail fast if the file is an iCloud stub
+      reader.readAsArrayBuffer(audioFile);
     });
 
     async function poll(jobId) {
