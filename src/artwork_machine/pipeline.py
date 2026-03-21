@@ -58,10 +58,12 @@ class PipelineOptions:
     skip_short:    bool = False
     skip_visualizer: bool = False
     image_model:   str = "black-forest-labs/FLUX.1-schnell"
+    status_callback: object = None  # callable(msg: str) to report progress to the web UI
 
 
 def run(opts: PipelineOptions) -> PipelineResult:
     t0 = time.perf_counter()
+    cb = opts.status_callback or (lambda msg: None)
 
     safe_name = _safe_slug(f"{opts.artist}_{opts.album}")
     out  = opts.output_dir / safe_name
@@ -78,17 +80,20 @@ def run(opts: PipelineOptions) -> PipelineResult:
     ) as progress:
 
         # ── 1. Audio analysis ─────────────────────────────────────────────────
+        cb("Analysing audio…")
         t = progress.add_task("Analysing audio …", total=None)
         features = analyse(opts.audio_path)
         progress.update(t, description=f"[green]✓ Audio analysed  ({features.duration:.0f}s, {features.bpm:.0f} BPM, {features.key})")
 
         # ── 2. Creative direction ─────────────────────────────────────────────
+        cb("Generating creative direction with Claude…")
         t2 = progress.add_task("Generating creative direction with Claude …", total=None)
         client    = anthropic.Anthropic()
         direction = generate_direction(features, opts.artist, opts.album, client=client)
         progress.update(t2, description=f"[green]✓ Direction: {direction.art_style}")
 
         # ── 3a. Album art (3000×3000) ─────────────────────────────────────────
+        cb("Generating album art (3000×3000)…")
         t3a = progress.add_task("Generating album art …", total=None)
         album_art_path = work / "album_art.png"
         image_generator.generate_album_art(
@@ -97,6 +102,7 @@ def run(opts: PipelineOptions) -> PipelineResult:
         progress.update(t3a, description="[green]✓ Album art generated (3000×3000)")
 
         # ── 3b. YouTube thumbnail (1280×720) ──────────────────────────────────
+        cb("Generating YouTube thumbnail…")
         t3b = progress.add_task("Generating YouTube thumbnail …", total=None)
         thumbnail_path = work / "thumbnail.png"
         image_generator.generate_thumbnail(
@@ -107,6 +113,7 @@ def run(opts: PipelineOptions) -> PipelineResult:
         # ── 3c. Canvas background (810×1440) ──────────────────────────────────
         canvas_bg_path = work / "canvas_bg.png"
         if not opts.skip_canvas:
+            cb("Generating Spotify Canvas background…")
             t3c = progress.add_task("Generating Spotify Canvas background …", total=None)
             image_generator.generate_canvas_image(
                 direction, canvas_bg_path, model=opts.image_model, draft=opts.draft,
@@ -120,6 +127,7 @@ def run(opts: PipelineOptions) -> PipelineResult:
         # ── 4. Spotify Canvas ─────────────────────────────────────────────────
         canvas_output = out / "spotify_canvas.mp4"
         if not opts.skip_canvas:
+            cb("Rendering Spotify Canvas (8s loop)…")
             t4 = progress.add_task("Rendering Spotify Canvas …", total=None)
             canvas_gen.generate(
                 bg_image_path=canvas_bg_path,
@@ -136,6 +144,7 @@ def run(opts: PipelineOptions) -> PipelineResult:
         # ── 5. 30-second short ────────────────────────────────────────────────
         short_output = out / "short.mp4"
         if not opts.skip_short:
+            cb("Rendering 30-second short…")
             t5 = progress.add_task("Rendering 30-second short …", total=None)
             short_gen.generate(
                 album_art_path=album_art_path,
@@ -152,6 +161,7 @@ def run(opts: PipelineOptions) -> PipelineResult:
         # ── 6. YouTube visualizer ─────────────────────────────────────────────
         viz_output = out / "youtube_visualizer.mp4"
         if not opts.skip_visualizer:
+            cb("Rendering YouTube visualizer…")
             t6 = progress.add_task("Rendering YouTube visualizer …", total=None)
             viz_gen.generate(
                 album_art_path=album_art_path,

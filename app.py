@@ -92,7 +92,9 @@ def output(filename):
 
 def _run_job(job_id, audio_path, artist, album, skip_canvas, skip_short, skip_visualizer, draft_mode):
     try:
-        JOBS[job_id]["message"] = "Analysing audio…"
+        def update_status(msg):
+            JOBS[job_id]["message"] = msg
+
         opts = PipelineOptions(
             artist=artist,
             album=album,
@@ -102,6 +104,7 @@ def _run_job(job_id, audio_path, artist, album, skip_canvas, skip_short, skip_vi
             skip_canvas=skip_canvas,
             skip_short=skip_short,
             skip_visualizer=skip_visualizer,
+            status_callback=update_status,
         )
         result = run_pipeline(opts)
 
@@ -302,8 +305,13 @@ HTML = """<!DOCTYPE html>
 
     async function poll(jobId) {
       try {
-        const res  = await fetch(`/status/${jobId}`);
-        const job  = await res.json();
+        const res = await fetch(`/status/${jobId}`);
+        if (res.status === 404) {
+          clearInterval(pollTimer);
+          showError('Server restarted mid-job — please re-upload your file.');
+          return;
+        }
+        const job = await res.json();
         const statusEl = document.getElementById('status');
 
         if (job.status === 'running') {
