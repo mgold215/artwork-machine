@@ -6,14 +6,19 @@ Then open:    http://localhost:7860
 """
 
 import os
+import sys
 from pathlib import Path
+
+print("Starting artwork-machine...", flush=True)
 
 import gradio as gr
 from dotenv import load_dotenv
 
 load_dotenv()
 
+print("Importing pipeline...", flush=True)
 from artwork_machine.pipeline import PipelineOptions, run as run_pipeline
+print("Pipeline ready.", flush=True)
 
 
 def generate(audio_file, artist, album, skip_canvas, skip_short, skip_visualizer, draft_mode, progress=gr.Progress()):
@@ -102,8 +107,11 @@ with gr.Blocks(title="artwork-machine") as app:
 
 
 if __name__ == "__main__":
+    port = int(os.getenv("PORT", 7860))
+    print(f"Launching on port {port}", flush=True)
     app.launch(
         server_name="0.0.0.0",
-        server_port=int(os.getenv("PORT", 7860)),
+        server_port=port,
         share=False,
+        show_error=True,
     )
