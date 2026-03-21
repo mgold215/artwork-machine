@@ -212,7 +212,7 @@ HTML = """<!DOCTYPE html>
   <script>
     let pollTimer = null;
 
-    document.getElementById('form').addEventListener('submit', async (e) => {
+    document.getElementById('form').addEventListener('submit', function(e) {
       e.preventDefault();
       const btn = document.getElementById('btn');
       const statusEl = document.getElementById('status');
@@ -229,25 +229,42 @@ HTML = """<!DOCTYPE html>
       const data = new FormData(form);
 
       // Convert checkboxes to true/false strings
-      ['skip_canvas','skip_short','skip_visualizer','draft_mode'].forEach(k => {
-        data.set(k, form.querySelector(`[name="${k}"]`).checked ? 'true' : 'false');
+      ['skip_canvas','skip_short','skip_visualizer','draft_mode'].forEach(function(k) {
+        data.set(k, form.querySelector('[name="' + k + '"]').checked ? 'true' : 'false');
       });
 
-      try {
-        const res  = await fetch('/generate', { method: 'POST', body: data });
-        const json = await res.json();
+      // Use XHR instead of fetch — more reliable for large file uploads in Safari
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', '/generate');
 
-        if (json.error) {
-          showError(json.error);
+      // Show upload progress
+      xhr.upload.onprogress = function(ev) {
+        if (ev.lengthComputable) {
+          const pct = Math.round((ev.loaded / ev.total) * 100);
+          statusEl.textContent = 'Uploading… ' + pct + '%';
+        }
+      };
+
+      xhr.onload = function() {
+        if (xhr.status !== 200) {
+          showError('Server error: ' + xhr.status);
           return;
         }
-
+        let json;
+        try { json = JSON.parse(xhr.responseText); } catch(ex) {
+          showError('Bad response from server');
+          return;
+        }
+        if (json.error) { showError(json.error); return; }
         statusEl.textContent = 'Pipeline running — this takes a few minutes…';
-        pollTimer = setInterval(() => poll(json.job_id), 4000);
+        pollTimer = setInterval(function() { poll(json.job_id); }, 4000);
+      };
 
-      } catch (err) {
-        showError(err.message);
-      }
+      xhr.onerror = function() {
+        showError('Upload failed — check your connection and try again');
+      };
+
+      xhr.send(data);
     });
 
     async function poll(jobId) {
