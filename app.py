@@ -63,20 +63,7 @@ def generate(audio_file, artist, album, skip_visualizer, draft_mode, progress=gr
 
 # ── UI ────────────────────────────────────────────────────────────────────────
 
-with gr.Blocks(
-    title="artwork-machine",
-    theme=gr.themes.Base(
-        primary_hue="zinc",
-        neutral_hue="zinc",
-        font=gr.themes.GoogleFont("Inter"),
-    ),
-    css="""
-        .gradio-container { max-width: 1100px; margin: 0 auto; }
-        #title { text-align: center; padding: 24px 0 8px; }
-        #subtitle { text-align: center; color: #888; margin-bottom: 24px; }
-        #generate-btn { font-size: 1.1em; height: 52px; }
-    """,
-) as app:
+with gr.Blocks(title="artwork-machine") as app:
 
     gr.Markdown("# artwork-machine", elem_id="title")
     gr.Markdown(
@@ -106,8 +93,8 @@ with gr.Blocks(
 
         # ── Right column — outputs ────────────────────────────────────────────
         with gr.Column(scale=1):
-            cassette_a_out = gr.Image(label="Cassette Side A", show_download_button=True)
-            cassette_b_out = gr.Image(label="Cassette Side B", show_download_button=True)
+            cassette_a_out = gr.Image(label="Cassette Side A")
+            cassette_b_out = gr.Image(label="Cassette Side B")
             canvas_out     = gr.Video(label="Spotify Canvas (8s loop)")
             direction_out  = gr.Textbox(label="Creative direction", lines=5, interactive=False)
 
