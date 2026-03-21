@@ -33,7 +33,10 @@ JOBS: dict = {}
 
 @app.route("/")
 def index():
-    return HTML
+    from flask import make_response
+    resp = make_response(HTML)
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return resp
 
 
 @app.route("/generate", methods=["POST"])
