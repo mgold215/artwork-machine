@@ -1,5 +1,4 @@
 [phases.setup]
-nixPkgs = ["python311", "ffmpeg"]
-
-[phases.install]
-cmds = ["python3 -m pip install -e ."]
+# Let nixpacks auto-detect Python from pyproject.toml (it handles pip correctly)
+# Only specify ffmpeg as an extra system dependency
+nixPkgs = ["ffmpeg"]
