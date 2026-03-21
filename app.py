@@ -16,8 +16,7 @@ load_dotenv()
 from artwork_machine.pipeline import PipelineOptions, run as run_pipeline
 
 
-def generate(audio_file, artist, album, skip_visualizer, draft_mode, progress=gr.Progress()):
-    # ── Validate inputs ───────────────────────────────────────────────────────
+def generate(audio_file, artist, album, skip_canvas, skip_short, skip_visualizer, draft_mode, progress=gr.Progress()):
     if not audio_file:
         raise gr.Error("Please upload an audio file.")
     if not artist.strip():
@@ -25,7 +24,7 @@ def generate(audio_file, artist, album, skip_visualizer, draft_mode, progress=gr
     if not album.strip():
         raise gr.Error("Album / track title is required.")
 
-    progress(0.05, desc="Starting pipeline…")
+    progress(0.05, desc="Starting…")
 
     opts = PipelineOptions(
         artist=artist.strip(),
@@ -33,75 +32,72 @@ def generate(audio_file, artist, album, skip_visualizer, draft_mode, progress=gr
         audio_path=Path(audio_file),
         output_dir=Path("./output"),
         draft=draft_mode,
-        skip_canvas=False,
+        skip_canvas=skip_canvas,
+        skip_short=skip_short,
         skip_visualizer=skip_visualizer,
     )
 
     try:
-        progress(0.10, desc="Analysing audio…")
         result = run_pipeline(opts)
     except Exception as exc:
         raise gr.Error(f"Pipeline failed: {exc}") from exc
 
     progress(1.0, desc="Done.")
 
-    cassette_a = str(result.cassette_side_a) if result.cassette_side_a.exists() else None
-    cassette_b = str(result.cassette_side_b) if result.cassette_side_b.exists() else None
-    canvas     = str(result.spotify_canvas)  if result.spotify_canvas.exists()  else None
+    album_art  = str(result.album_art)          if result.album_art.exists()          else None
+    thumbnail  = str(result.thumbnail)          if result.thumbnail.exists()          else None
+    canvas     = str(result.spotify_canvas)     if result.spotify_canvas.exists()     else None
+    short      = str(result.short_video)        if result.short_video.exists()        else None
+    visualizer = str(result.youtube_visualizer) if result.youtube_visualizer.exists() else None
 
-    direction_summary = (
+    summary = (
         f"Style:    {result.direction.art_style}\n"
         f"Palette:  {result.direction.palette_primary}  ·  "
         f"{result.direction.palette_secondary}  ·  {result.direction.palette_accent}\n"
         f"Motion:   {result.direction.canvas_motion_style}\n"
-        f"Brand:    {result.direction.cassette_brand_name} ({result.direction.cassette_era})\n"
-        f"Tagline:  \"{result.direction.label_tagline}\""
+        f"Tagline:  \"{result.direction.tagline}\""
     )
 
-    return cassette_a, cassette_b, canvas, direction_summary
+    return album_art, thumbnail, canvas, short, visualizer, summary
 
-
-# ── UI ────────────────────────────────────────────────────────────────────────
 
 with gr.Blocks(title="artwork-machine") as app:
 
-    gr.Markdown("# artwork-machine", elem_id="title")
-    gr.Markdown(
-        "Drop in a track. Get cassette art, a Spotify Canvas loop, and a YouTube visualizer.",
-        elem_id="subtitle",
-    )
+    gr.Markdown("# artwork-machine")
+    gr.Markdown("Drop in a track. Get album art, thumbnail, Spotify Canvas, a short, and a YouTube visualizer.")
 
     with gr.Row(equal_height=False):
 
-        # ── Left column — inputs ──────────────────────────────────────────────
+        # ── Inputs ────────────────────────────────────────────────────────────
         with gr.Column(scale=1):
-            audio_input = gr.Audio(
-                type="filepath",
-                label="Audio file",
-                sources=["upload"],
-            )
-            artist_input = gr.Textbox(label="Artist name", placeholder="e.g. moodmixformat")
+            audio_input  = gr.Audio(type="filepath", label="Audio file", sources=["upload"])
+            artist_input = gr.Textbox(label="Artist name",        placeholder="e.g. moodmixformat")
             album_input  = gr.Textbox(label="Album / track title", placeholder="e.g. BLOOM")
 
+            gr.Markdown("**Skip options** (check to speed things up)")
             with gr.Row():
-                skip_viz   = gr.Checkbox(label="Skip YouTube visualizer", value=True,
-                                         info="Saves ~80 GB of temp disk space")
-                draft_mode = gr.Checkbox(label="Draft mode", value=False,
-                                         info="Faster, lower resolution preview")
+                skip_canvas     = gr.Checkbox(label="Skip Canvas",      value=False)
+                skip_short      = gr.Checkbox(label="Skip Short",        value=False)
+                skip_visualizer = gr.Checkbox(label="Skip Visualizer",   value=True,
+                                              info="Needs ~80 GB temp space")
+            draft_mode = gr.Checkbox(label="Draft mode (faster, lower res)", value=False)
 
-            generate_btn = gr.Button("Generate", variant="primary", elem_id="generate-btn")
+            generate_btn = gr.Button("Generate", variant="primary")
 
-        # ── Right column — outputs ────────────────────────────────────────────
+        # ── Outputs ───────────────────────────────────────────────────────────
         with gr.Column(scale=1):
-            cassette_a_out = gr.Image(label="Cassette Side A")
-            cassette_b_out = gr.Image(label="Cassette Side B")
+            album_art_out  = gr.Image(label="Album Art (3000×3000)")
+            thumbnail_out  = gr.Image(label="YouTube Thumbnail (1280×720)")
             canvas_out     = gr.Video(label="Spotify Canvas (8s loop)")
-            direction_out  = gr.Textbox(label="Creative direction", lines=5, interactive=False)
+            short_out      = gr.Video(label="30-second Short")
+            visualizer_out = gr.Video(label="YouTube Visualizer (full length)")
+            summary_out    = gr.Textbox(label="Creative direction", lines=4, interactive=False)
 
     generate_btn.click(
         fn=generate,
-        inputs=[audio_input, artist_input, album_input, skip_viz, draft_mode],
-        outputs=[cassette_a_out, cassette_b_out, canvas_out, direction_out],
+        inputs=[audio_input, artist_input, album_input,
+                skip_canvas, skip_short, skip_visualizer, draft_mode],
+        outputs=[album_art_out, thumbnail_out, canvas_out, short_out, visualizer_out, summary_out],
     )
 
 

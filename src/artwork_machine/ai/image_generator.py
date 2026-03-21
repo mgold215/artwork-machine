@@ -5,12 +5,14 @@ Uses the Hugging Face Inference API (free tier) to generate artwork from prompts
 produced by the :mod:`prompt_generator` module.
 
 Default model: black-forest-labs/FLUX.1-schnell
-  - Same Flux family as the original Flux 1.1 Pro
   - Free with a Hugging Face account (huggingface.co)
   - Requires agreeing to the model licence on the HF model page once
 
-Canvas layers are generated at OVERSIZE resolution (810×1440 — 9:16) so the
-drone parallax compositor has ~12 % extra pixels in all directions.
+Outputs
+-------
+Album art   — generated at 1024×1024, upscaled to 3000×3000 with LANCZOS
+Thumbnail   — generated at 1024×576, upscaled to 1280×720 (16:9)
+Canvas bg   — generated at 810×1440 (9:16, oversize for Ken-Burns headroom)
 """
 
 from __future__ import annotations
@@ -25,38 +27,43 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 from artwork_machine.ai.prompt_generator import CreativeDirection
 
 
-# ── Size constants ────────────────────────────────────────────────────────────
-
-# Label art — square
-_LABEL_W, _LABEL_H = 1024, 1024
-_LABEL_W_DRAFT, _LABEL_H_DRAFT = 512, 512
-
-# Canvas layers — 9:16, oversized to give parallax compositor headroom
-_LAYER_W, _LAYER_H = 810, 1440
-_LAYER_W_DRAFT, _LAYER_H_DRAFT = 405, 720
-
-# Default free model — FLUX.1-schnell on Hugging Face
 _DEFAULT_MODEL = "black-forest-labs/FLUX.1-schnell"
+
+# Final output sizes
+_ALBUM_ART_FINAL = (3000, 3000)
+_THUMB_FINAL     = (1280, 720)
+
+# HF generation sizes (within API limits)
+_ALBUM_ART_GEN       = (1024, 1024)
+_ALBUM_ART_GEN_DRAFT = (512, 512)
+_THUMB_GEN           = (1024, 576)
+_THUMB_GEN_DRAFT     = (512, 288)
+_CANVAS_GEN          = (810, 1440)   # oversize 9:16 for Ken-Burns headroom
+_CANVAS_GEN_DRAFT    = (405, 720)
+
+# Quality suffix appended to every prompt
+_QUALITY_SUFFIX = (
+    "Shot on camera, 4K cinema lens, photorealistic, hyperdetailed, "
+    "no CGI, no render, no text, no watermarks."
+)
 
 
 # ── Client ────────────────────────────────────────────────────────────────────
 
 def _get_client() -> InferenceClient:
-    """Return an InferenceClient using HF_TOKEN from environment."""
     token = os.getenv("HF_TOKEN")
     if not token:
         raise ValueError(
             "HF_TOKEN is not set. "
-            "Get a free token at huggingface.co → Settings → Access Tokens, "
-            "then add it to your .env file."
+            "Get a free token at huggingface.co → Settings → Access Tokens."
         )
     return InferenceClient(token=token)
 
 
-# ── Label art ─────────────────────────────────────────────────────────────────
+# ── Album art ─────────────────────────────────────────────────────────────────
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
-def generate_label_art(
+def generate_album_art(
     direction: CreativeDirection,
     output_path: Path,
     model: str = _DEFAULT_MODEL,
@@ -64,105 +71,99 @@ def generate_label_art(
     draft: bool = False,
 ) -> Path:
     """
-    Generate the primary cassette label artwork (square, 1024×1024).
+    Generate 3000×3000 album art for streaming services.
 
-    The prompt foregrounds photorealistic cassette structures as the hero
-    subject, as specified in the creative direction.
+    Generates at 1024×1024 (HF API limit) then upscales to 3000×3000 with
+    LANCZOS resampling — industry standard for print/streaming submissions.
     """
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    w = _LABEL_W_DRAFT if draft else _LABEL_W
-    h = _LABEL_H_DRAFT if draft else _LABEL_H
+    gen_w, gen_h = _ALBUM_ART_GEN_DRAFT if draft else _ALBUM_ART_GEN
 
     prompt = (
-        f"{direction.image_prompt}  "
+        f"{direction.album_art_prompt}  "
         f"Style: {direction.art_style}.  "
         f"Colour palette: {direction.palette_primary}, "
         f"{direction.palette_secondary}, {direction.palette_accent}.  "
-        "Shot on camera, 4K cinema lens, photorealistic, hyperdetailed, "
-        "no CGI, no render, no text, no watermarks."
+        f"{_QUALITY_SUFFIX}"
     )
 
-    return _run_and_save(model, prompt, w, h, output_path)
+    image = _generate(model, prompt, gen_w, gen_h)
+
+    # Upscale to final delivery size
+    final_w, final_h = (_ALBUM_ART_GEN_DRAFT if draft else _ALBUM_ART_FINAL)
+    if (gen_w, gen_h) != (final_w, final_h):
+        image = image.resize((final_w, final_h), Image.LANCZOS)
+
+    image.convert("RGB").save(str(output_path), "PNG")
+    return output_path
 
 
-# ── Canvas parallax layers ────────────────────────────────────────────────────
+# ── YouTube thumbnail ─────────────────────────────────────────────────────────
 
-def generate_canvas_layers(
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
+def generate_thumbnail(
     direction: CreativeDirection,
-    work_dir: Path,
+    output_path: Path,
     model: str = _DEFAULT_MODEL,
     *,
     draft: bool = False,
-) -> dict[str, Path]:
-    """
-    Generate the three depth layers used by the drone parallax compositor.
+) -> Path:
+    """Generate 1280×720 YouTube thumbnail (16:9)."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    Returns a dict with keys ``"far"``, ``"mid"``, ``"near"`` mapping to PNG paths.
+    gen_w, gen_h = _THUMB_GEN_DRAFT if draft else _THUMB_GEN
 
-    Layer semantics
-    ───────────────
-    far  (depth 0.15) — Aerial drone background.  Barely moves.
-    mid  (depth 0.50) — Overhead cassette scene.  Moderate parallax.
-    near (depth 0.90) — Macro tape texture.  Maximum parallax, most movement.
-    """
-    work_dir.mkdir(parents=True, exist_ok=True)
-    paths = {
-        "far":  work_dir / "canvas_layer_far.png",
-        "mid":  work_dir / "canvas_layer_mid.png",
-        "near": work_dir / "canvas_layer_near.png",
-    }
-    prompts = {
-        "far":  direction.canvas_far_prompt,
-        "mid":  direction.canvas_mid_prompt,
-        "near": direction.canvas_near_prompt,
-    }
+    prompt = (
+        f"{direction.thumbnail_prompt}  "
+        f"Style: {direction.art_style}.  "
+        f"Colour palette: {direction.palette_primary}, "
+        f"{direction.palette_secondary}, {direction.palette_accent}.  "
+        f"{_QUALITY_SUFFIX}"
+    )
 
-    for key, path in paths.items():
-        _generate_canvas_layer(
-            prompt=prompts[key],
-            output_path=path,
-            model=model,
-            draft=draft,
-        )
+    image = _generate(model, prompt, gen_w, gen_h)
+    image = image.resize(_THUMB_FINAL, Image.LANCZOS)
+    image.convert("RGB").save(str(output_path), "PNG")
+    return output_path
 
-    return paths
 
+# ── Spotify Canvas background ─────────────────────────────────────────────────
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
-def _generate_canvas_layer(
-    prompt: str,
+def generate_canvas_image(
+    direction: CreativeDirection,
     output_path: Path,
-    model: str,
+    model: str = _DEFAULT_MODEL,
     *,
-    draft: bool,
+    draft: bool = False,
 ) -> Path:
-    """Generate one canvas parallax layer at the correct oversize resolution."""
-    w = _LAYER_W_DRAFT if draft else _LAYER_W
-    h = _LAYER_H_DRAFT if draft else _LAYER_H
+    """
+    Generate a 9:16 background image for the Spotify Canvas.
 
-    full_prompt = (
-        f"{prompt}  "
-        "Shot on camera, 4K cinema lens, photorealistic, hyperdetailed, "
-        "no CGI, no render, no text, no watermarks, no logos."
-    )
-
-    return _run_and_save(model, full_prompt, w, h, output_path)
-
-
-# ── Shared helpers ─────────────────────────────────────────────────────────────
-
-def _run_and_save(model: str, prompt: str, width: int, height: int, output_path: Path) -> Path:
-    """Call the HF Inference API, get a PIL Image, save it as PNG."""
-    client = _get_client()
-    # text_to_image returns a PIL Image directly — no URL fetching needed
-    image: Image.Image = client.text_to_image(
-        prompt=prompt,
-        model=model,
-        width=width,
-        height=height,
-    )
-    image = image.convert("RGBA")
+    Generated at 810×1440 (oversize) so the Ken-Burns pan/zoom compositor
+    has ~12% extra pixels to travel without revealing edges.
+    """
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    image.save(str(output_path), "PNG")
+
+    gen_w, gen_h = _CANVAS_GEN_DRAFT if draft else _CANVAS_GEN
+
+    prompt = (
+        f"{direction.canvas_prompt}  "
+        f"Style: {direction.art_style}.  "
+        f"Colour palette: {direction.palette_primary}, "
+        f"{direction.palette_secondary}, {direction.palette_accent}.  "
+        f"{_QUALITY_SUFFIX}"
+    )
+
+    image = _generate(model, prompt, gen_w, gen_h)
+    image.convert("RGBA").save(str(output_path), "PNG")
     return output_path
+
+
+# ── Shared helper ─────────────────────────────────────────────────────────────
+
+def _generate(model: str, prompt: str, width: int, height: int) -> Image.Image:
+    """Call the HF Inference API and return a PIL Image."""
+    client = _get_client()
+    return client.text_to_image(prompt=prompt, model=model, width=width, height=height)
