@@ -11,4 +11,5 @@ COPY . .
 RUN pip install --no-cache-dir -e .
 
 EXPOSE 7860
-CMD ["python", "app.py"]
+# gunicorn: production WSGI server with 10min timeout for large uploads + long pipeline runs
+CMD ["gunicorn", "app:app", "--bind", "0.0.0.0:8080", "--workers", "1", "--timeout", "600", "--worker-class", "sync"]

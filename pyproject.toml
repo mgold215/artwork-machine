@@ -25,6 +25,7 @@ dependencies = [
     "ffmpeg-python>=0.2.0",
     # Web UI
     "flask>=3.0.0",
+    "gunicorn>=22.0.0",
     # CLI & UX
     "click>=8.1.7",
     "rich>=13.7.0",
