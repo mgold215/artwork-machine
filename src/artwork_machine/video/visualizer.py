@@ -463,8 +463,18 @@ def _prepare_cassette_panel(path: Path, w: int, h: int) -> np.ndarray:
 
 def _encode_with_audio(frames_dir: Path, audio_path: Path, output_path: Path, fps: int) -> None:
     """Encode frames to H.264 and mux with source audio."""
+    import shutil as _shutil
+    ffmpeg_bin = _shutil.which("ffmpeg")
+    if ffmpeg_bin is None:
+        try:
+            import imageio_ffmpeg
+            ffmpeg_bin = imageio_ffmpeg.get_ffmpeg_exe()
+        except ImportError:
+            raise RuntimeError(
+                "ffmpeg not found. Install ffmpeg or `pip install imageio-ffmpeg`."
+            )
     cmd = [
-        "ffmpeg", "-y",
+        ffmpeg_bin, "-y",
         "-framerate", str(fps),
         "-i", str(frames_dir / "frame_%06d.png"),
         "-i", str(audio_path),
