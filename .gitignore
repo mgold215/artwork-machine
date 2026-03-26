@@ -19,3 +19,6 @@ venv/
 *.mp3
 *.flac
 work/
+output/
+profiles/covers/
+*.zip

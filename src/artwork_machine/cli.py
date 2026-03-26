@@ -6,15 +6,11 @@ Usage examples:
   # Full pipeline (production quality)
   artwork-machine generate song.mp3 --artist "Neon Drift" --album "Glass Veins"
 
-  # Fast draft render (skips full resolution, fewer AI steps)
+  # Fast draft render (skips Runway, uses Ken-Burns + procedural art)
   artwork-machine generate song.flac --artist "The Hollow" --album "Dust" --draft
 
   # Skip the visualiser (faster, great for singles)
   artwork-machine generate track.wav --artist "Solaris" --album "Orbit" --no-visualizer
-
-  # Use a different image generation model
-  artwork-machine generate song.mp3 --artist "X" --album "Y" \\
-      --model stability-ai/sdxl:latest
 
   # Analyse audio only (no generation)
   artwork-machine analyse song.mp3
@@ -37,9 +33,9 @@ console = Console()
 
 
 @click.group()
-@click.version_option("0.1.0", prog_name="artwork-machine")
+@click.version_option("0.2.0", prog_name="artwork-machine")
 def main() -> None:
-    """Automated cassette art, Spotify Canvas, and YouTube visualizer generator."""
+    """Automated album art, Spotify Canvas, and YouTube visualizer generator."""
 
 
 @main.command()
@@ -54,12 +50,12 @@ def main() -> None:
     type=click.Path(path_type=Path),
 )
 @click.option(
-    "--model", "-m",
-    default="black-forest-labs/flux-1.1-pro",
-    show_default=True,
-    help="Replicate image model ID",
+    "--ref", "-r",
+    multiple=True,
+    type=click.Path(exists=True, path_type=Path),
+    help="Reference album cover image (repeat for multiple, max 5)",
 )
-@click.option("--draft", is_flag=True, default=False, help="Draft quality (fast, low-res)")
+@click.option("--draft", is_flag=True, default=False, help="Draft quality (fast, skips Runway)")
 @click.option("--no-canvas", is_flag=True, default=False, help="Skip Spotify Canvas video")
 @click.option("--no-visualizer", is_flag=True, default=False, help="Skip YouTube visualizer")
 def generate(
@@ -67,7 +63,7 @@ def generate(
     artist: str,
     album: str,
     output: Path,
-    model: str,
+    ref: tuple[Path, ...],
     draft: bool,
     no_canvas: bool,
     no_visualizer: bool,
@@ -76,23 +72,24 @@ def generate(
     Run the full artwork generation pipeline for AUDIO_FILE.
 
     Requires ANTHROPIC_API_KEY and REPLICATE_API_TOKEN in environment or .env.
+    RUNWAY_API_TOKEN is required for Spotify Canvas animation (unless --draft).
     """
     from artwork_machine.pipeline import PipelineOptions, run
 
     _validate_env()
 
     if draft:
-        console.print("[yellow]⚡ Draft mode — lower resolution, faster generation[/yellow]")
+        console.print("[yellow]Draft mode — lower resolution, skipping Runway[/yellow]")
 
     opts = PipelineOptions(
         artist=artist,
         album=album,
         audio_path=audio_file,
         output_dir=output,
+        reference_cover_paths=list(ref[:5]),
         draft=draft,
         skip_canvas=no_canvas,
         skip_visualizer=no_visualizer,
-        image_model=model,
     )
 
     try:
@@ -101,14 +98,12 @@ def generate(
         console.print(f"\n[bold red]Error:[/bold red] {exc}")
         raise SystemExit(1) from exc
 
-    # ── Print summary ─────────────────────────────────────────────────────────
     table = Table(title="Generated Deliverables", show_header=True, header_style="bold cyan")
     table.add_column("File", style="white")
     table.add_column("Path", style="green")
 
     deliverables = [
-        ("Cassette Side A", result.cassette_side_a),
-        ("Cassette Side B", result.cassette_side_b),
+        ("Album Cover", result.album_cover),
         ("Spotify Canvas", result.spotify_canvas),
         ("YouTube Visualizer", result.youtube_visualizer),
     ]
@@ -118,12 +113,13 @@ def generate(
             table.add_row(label, f"{path}  ({size_mb:.1f} MB)")
 
     console.print(table)
-    console.print(f"\n[bold]Creative direction:[/bold]")
+    console.print("\n[bold]Creative direction:[/bold]")
     console.print(f"  Style:   {result.direction.art_style}")
     console.print(f"  Palette: {result.direction.palette_primary} · {result.direction.palette_secondary} · {result.direction.palette_accent}")
     console.print(f"  Motion:  {result.direction.canvas_motion_style}")
-    console.print(f"  Brand:   {result.direction.cassette_brand_name} ({result.direction.cassette_era})")
-    console.print(f"  Tagline: \"{result.direction.label_tagline}\"")
+    console.print(f"  Tagline: \"{result.direction.tagline}\"")
+    if result.style:
+        console.print(f"  Reference style: {result.style.summary}")
 
 
 @main.command()
@@ -176,10 +172,7 @@ def analyse(audio_file: Path, json_out: bool) -> None:
     console.print(table)
 
 
-# ── Helpers ────────────────────────────────────────────────────────────────────
-
 def _validate_env() -> None:
-    """Check required API keys are set."""
     import os
     missing = []
     if not os.getenv("ANTHROPIC_API_KEY"):
@@ -190,6 +183,6 @@ def _validate_env() -> None:
     if missing:
         console.print(
             f"[bold red]Missing environment variables:[/bold red] {', '.join(missing)}\n"
-            "Copy [cyan].env.example[/cyan] → [cyan].env[/cyan] and add your keys."
+            "Copy [cyan].env.example[/cyan] -> [cyan].env[/cyan] and add your keys."
         )
         raise SystemExit(1)

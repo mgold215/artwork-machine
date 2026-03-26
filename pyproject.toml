@@ -5,12 +5,13 @@ build-backend = "hatchling.build"
 [project]
 name = "artwork-machine"
 version = "0.1.0"
-description = "Fully automated generator for cassette album art, Spotify Canvas videos, and YouTube visualizers"
+description = "Fully automated generator for HD album art, Spotify Canvas videos, and YouTube visualizers"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     # AI & generation
     "anthropic>=0.40.0",
+    "replicate>=0.25.0",
     # Audio analysis
     "librosa>=0.10.2",
     "soundfile>=0.12.1",
@@ -22,6 +23,10 @@ dependencies = [
     # Video generation
     "moviepy>=1.0.3",
     "ffmpeg-python>=0.2.0",
+    "imageio-ffmpeg>=0.4.9",
+    # Web UI
+    "flask>=3.0.0",
+    "gunicorn>=22.0.0",
     # CLI & UX
     "click>=8.1.7",
     "rich>=13.7.0",

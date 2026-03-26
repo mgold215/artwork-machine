@@ -1,27 +1,27 @@
 """
 YouTube Visualizer engine.
 
-Produces a full HD (1920×1080, 60fps) video synchronized to the input audio.
+Produces a full HD (1920x1080, 60fps) video synchronized to the input audio.
 
 Visual layout
-─────────────
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                                                                             │
-│   Artist Name                                          [cassette art]       │
-│   Album Title                                          (animated reel)      │
-│                                                                             │
-│   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ← waveform             │
-│                                                                             │
-│   ▁▂▃▅▇▆▄▃▂▁▁▂▃▅▇▆▄▃▂▁   ← spectrum bars (64 bands)                       │
-│                                                                             │
-│   ●  ─────────────────────────────────○  ← progress bar                    │
-│       0:00                                                                  │
-└─────────────────────────────────────────────────────────────────────────────┘
+-------------
++-----------------------------------------------------------------------------+
+|                                                                             |
+|   Artist Name                                          [album cover]        |
+|   Album Title                                                               |
+|                                                                             |
+|   --------------------------------------------------  <- waveform          |
+|                                                                             |
+|   spectrum bars / radial waveform / particle field                          |
+|                                                                             |
+|   o  ---------------------------------------------- <- progress bar        |
+|       0:00                                                                  |
++-----------------------------------------------------------------------------+
 
 Three visualiser styles (selected by Claude based on mood):
-  "spectrum bars"    — classic equaliser bar graph
-  "radial waveform"  — circular waveform pulse (ala Apple Music)
-  "particle field"   — frequency-driven particle fountain
+  "spectrum bars"    -- classic equaliser bar graph
+  "radial waveform"  -- circular waveform pulse (ala Apple Music)
+  "particle field"   -- frequency-driven particle fountain
 """
 
 from __future__ import annotations
@@ -41,7 +41,6 @@ from artwork_machine.video.effects import (
     bloom,
     colour_grade,
     vignette,
-    reel_angle,
 )
 from artwork_machine.artwork.utils import hex_to_rgba, load_font
 
@@ -51,7 +50,7 @@ FPS = 60
 
 
 def generate(
-    cassette_art_path: Path,
+    album_cover_path: Path,
     audio_path: Path,
     direction: CreativeDirection,
     features: AudioFeatures,
@@ -66,8 +65,8 @@ def generate(
 
     Parameters
     ----------
-    cassette_art_path:
-        3000×3000 cassette PNG (will be cropped to a right-side panel).
+    album_cover_path:
+        3000x3000 album cover PNG (will be cropped to a right-side panel).
     audio_path:
         Source audio file (any ffmpeg-supported format).
     """
@@ -83,8 +82,8 @@ def generate(
     accent_colour = _hex_to_float3(direction.palette_accent)
     secondary_colour = _hex_to_float3(direction.palette_secondary)
 
-    # ── Prepare cassette panel ────────────────────────────────────────────────
-    cass_panel = _prepare_cassette_panel(cassette_art_path, w, h)
+    # ── Prepare album cover panel ─────────────────────────────────────────────
+    cass_panel = _prepare_art_panel(album_cover_path, w, h)
 
     # ── Particle system (used for "particle field" style) ─────────────────────
     particles = ParticleSystem(w, h, n_particles=300 if not draft else 80)
@@ -168,7 +167,7 @@ def _render_frame(
     frame[:, :, :3] = bg_colour
     frame[:, :, 3] = 1.0
 
-    # ── Cassette panel (right side) ───────────────────────────────────────────
+    # ── Album cover panel (right side) ───────────────────────────────────────
     frame = _composite_panel(frame, cass_panel, w, h)
 
     # ── Main visualiser (left 65% of frame) ──────────────────────────────────
@@ -184,10 +183,6 @@ def _render_frame(
         particles.step(t, energy)
         frame = particles.render(frame, accent_colour)
         frame = _draw_spectrum_bars(frame, spectrum, energy, accent_colour, secondary_colour, vis_w, h)
-
-    # ── Animated reel in cassette panel ───────────────────────────────────────
-    angle = reel_angle(t, features.bpm)
-    frame = _draw_animated_reel(frame, angle, energy, direction, w, h)
 
     # ── Progress bar ─────────────────────────────────────────────────────────
     progress = t / features.duration
@@ -325,49 +320,6 @@ def _draw_radial_waveform(
     return np.array(pil, dtype=np.float32) / 255.0
 
 
-def _draw_animated_reel(
-    frame: np.ndarray,
-    angle: float,
-    energy: float,
-    direction: CreativeDirection,
-    w: int,
-    h: int,
-) -> np.ndarray:
-    """Draw a spinning reel indicator over the cassette panel."""
-    panel_cx = int(w * 0.82)
-    panel_cy = int(h * 0.40)
-    reel_r = int(min(w, h) * 0.06)
-    hub_r = int(reel_r * 0.28)
-    spoke_count = 5
-
-    pil = Image.fromarray((np.clip(frame, 0, 1) * 255).astype(np.uint8), "RGBA")
-    draw = ImageDraw.Draw(pil)
-
-    accent = hex_to_rgba(direction.palette_accent)
-    shell = hex_to_rgba(direction.cassette_shell_colour, alpha=200)
-    dark = (20, 15, 10, 240)
-
-    # Tape (outer ring)
-    r = int(reel_r * (0.5 + energy * 0.5))
-    draw.ellipse([panel_cx - reel_r, panel_cy - reel_r, panel_cx + reel_r, panel_cy + reel_r], fill=(35, 20, 10, 200))
-
-    # Spokes
-    for i in range(spoke_count):
-        a = math.radians(angle + i * 360 / spoke_count)
-        sx = panel_cx + int(math.cos(a) * hub_r)
-        sy = panel_cy + int(math.sin(a) * hub_r)
-        ex = panel_cx + int(math.cos(a) * (r - 4))
-        ey = panel_cy + int(math.sin(a) * (r - 4))
-        draw.line([(sx, sy), (ex, ey)], fill=shell, width=max(2, reel_r // 20))
-
-    # Hub
-    draw.ellipse([panel_cx - hub_r, panel_cy - hub_r, panel_cx + hub_r, panel_cy + hub_r], fill=shell)
-    # Centre hole
-    draw.ellipse([panel_cx - 6, panel_cy - 6, panel_cx + 6, panel_cy + 6], fill=dark)
-
-    return np.array(pil, dtype=np.float32) / 255.0
-
-
 def _draw_progress_bar(
     frame: np.ndarray,
     progress: float,
@@ -428,7 +380,7 @@ def _draw_text(
     return np.array(pil, dtype=np.float32) / 255.0
 
 
-# ── Cassette panel helper ──────────────────────────────────────────────────────
+# ── Art panel helper ───────────────────────────────────────────────────────────
 
 def _composite_panel(frame: np.ndarray, panel: np.ndarray, w: int, h: int) -> np.ndarray:
     ph, pw = panel.shape[:2]
@@ -449,13 +401,11 @@ def _composite_panel(frame: np.ndarray, panel: np.ndarray, w: int, h: int) -> np
     return frame
 
 
-def _prepare_cassette_panel(path: Path, w: int, h: int) -> np.ndarray:
-    """Load cassette art, scale to ~28% frame width, return float32 RGBA."""
+def _prepare_art_panel(path: Path, w: int, h: int) -> np.ndarray:
+    """Load album cover, scale to ~28% frame width (square crop), return float32 RGBA."""
     img = Image.open(str(path)).convert("RGBA")
     target_w = int(w * 0.28)
-    ratio = target_w / img.width
-    target_h = int(img.height * ratio)
-    img = img.resize((target_w, target_h), Image.LANCZOS)
+    img = img.resize((target_w, target_w), Image.LANCZOS)  # square panel
     return np.array(img, dtype=np.float32) / 255.0
 
 

@@ -13,15 +13,12 @@ class Settings(BaseSettings):
 
     # ── AI services ──────────────────────────────────────────────────────────
     anthropic_api_key: str = Field(..., alias="ANTHROPIC_API_KEY")
-
-    # ── Image generation ─────────────────────────────────────────────────────
-    image_model: str = Field(
-        default="local",
-        alias="IMAGE_MODEL",
-    )
+    replicate_api_token: str = Field(default="", alias="REPLICATE_API_TOKEN")
+    runway_api_token: str = Field(default="", alias="RUNWAY_API_TOKEN")
 
     # ── Output ───────────────────────────────────────────────────────────────
     output_dir: Path = Field(default=Path("./output"), alias="OUTPUT_DIR")
+    profiles_dir: Path = Field(default=Path("./profiles"), alias="PROFILES_DIR")
     render_quality: str = Field(default="production", alias="RENDER_QUALITY")
 
     # ── Spotify Canvas ────────────────────────────────────────────────────────
@@ -33,9 +30,8 @@ class Settings(BaseSettings):
     visualizer_width: int = Field(default=1920, alias="VISUALIZER_WIDTH")
     visualizer_height: int = Field(default=1080, alias="VISUALIZER_HEIGHT")
 
-    @property
-    def assets_dir(self) -> Path:
-        return Path(__file__).parent.parent.parent / "assets"
+    # ── Web server ────────────────────────────────────────────────────────────
+    port: int = Field(default=7860, alias="PORT")
 
     @property
     def is_draft(self) -> bool:
