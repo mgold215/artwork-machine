@@ -1,0 +1,32 @@
+# Cog configuration for Replicate deployment
+# Docs: https://cog.run/yaml
+
+build:
+  # Python version used by the model
+  python_version: "3.11"
+
+  # System packages needed for audio processing and image compositing
+  system_packages:
+    - ffmpeg
+    - libsndfile1-dev
+    - libcairo2-dev
+    - pkg-config
+
+  # Python dependencies — mirrors pyproject.toml
+  python_packages:
+    - anthropic>=0.40.0
+    - huggingface_hub>=0.23.0
+    - librosa>=0.10.2
+    - soundfile>=0.12.1
+    - numpy>=1.26.0
+    - scipy>=1.12.0
+    - Pillow>=10.3.0
+    - cairosvg>=2.7.1
+    - httpx>=0.27.0
+    - tenacity>=8.3.0
+    - pydantic>=2.7.0
+    - pydantic-settings>=2.3.0
+    - rich>=13.7.0
+
+# Entry point — the Predictor class that Replicate calls
+predict: "predict.py:Predictor"
