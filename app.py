@@ -88,6 +88,44 @@ def output(filename):
     return send_from_directory("./output", filename)
 
 
+AUDIO_EXTENSIONS = {".mp3", ".wav", ".flac", ".aiff", ".m4a", ".ogg"}
+
+@app.route("/tracks")
+def list_tracks():
+    output_dir = Path("./output")
+    tracks = []
+    if output_dir.exists():
+        for folder in sorted(output_dir.iterdir()):
+            if not folder.is_dir():
+                continue
+            art = folder / "album_art.png"
+            if not art.exists():
+                continue
+            audio_file = next(
+                (f for f in folder.iterdir() if f.stem == "audio" and f.suffix in AUDIO_EXTENSIONS),
+                None,
+            )
+            if not audio_file:
+                continue
+            parts = folder.name.split("_", 1)
+            artist = parts[0].replace("-", " ") if len(parts) > 1 else "Unknown"
+            title  = parts[1].replace("-", " ") if len(parts) > 1 else folder.name.replace("-", " ")
+            tracks.append({
+                "id":          folder.name,
+                "title":       title,
+                "artist":      artist,
+                "artwork_url": f"/output/{folder.name}/album_art.png",
+                "audio_url":   f"/output/{folder.name}/{audio_file.name}",
+                "uploaded_at": int(folder.stat().st_mtime),
+            })
+    return jsonify(tracks)
+
+
+@app.route("/player")
+def player():
+    return PLAYER_HTML
+
+
 # ── Background job ────────────────────────────────────────────────────────────
 
 def _run_job(job_id, audio_path, artist, album, skip_canvas, skip_short, skip_visualizer, draft_mode):
@@ -186,6 +224,9 @@ HTML = """<!DOCTYPE html>
 </head>
 <body>
   <div class="container">
+    <div style="text-align:right; margin-bottom:12px;">
+      <a href="/player" style="color:#7c6af5; text-decoration:none; font-size:0.88rem; font-weight:500;">&#9835; All Tracks</a>
+    </div>
     <h1>artwork-machine</h1>
     <p class="sub">Upload a track. Get album art, thumbnail, Spotify Canvas, a short, and a YouTube visualizer.</p>
 
@@ -377,6 +418,612 @@ HTML = """<!DOCTYPE html>
 
       el.style.display = 'block';
     }
+  </script>
+</body>
+</html>"""
+
+
+PLAYER_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>All Tracks — artwork-machine</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --accent: #7c6af5;
+      --accent-dim: rgba(124,106,245,0.35);
+      --bg: #0a0a0a;
+      --surface: rgba(255,255,255,0.04);
+      --border: rgba(255,255,255,0.08);
+      --text: #e8e8e8;
+      --subtext: #888;
+      --sidebar: 280px;
+      --controls: 96px;
+    }
+
+    html, body { height: 100%; overflow: hidden; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Background artwork blur ── */
+    #bg-blur {
+      position: fixed; inset: 0; z-index: 0;
+      background-size: cover; background-position: center;
+      filter: blur(90px) saturate(1.5) brightness(0.25);
+      transform: scale(1.15);
+      transition: background-image 0.6s ease;
+    }
+    #bg-overlay {
+      position: fixed; inset: 0; z-index: 1;
+      background: linear-gradient(to bottom, rgba(10,10,10,0.55) 0%, rgba(10,10,10,0.72) 100%);
+    }
+
+    /* ── Nav ── */
+    #topnav {
+      position: relative; z-index: 10;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 24px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(10,10,10,0.6);
+      backdrop-filter: blur(20px);
+      flex-shrink: 0;
+    }
+    #topnav a {
+      color: var(--subtext); text-decoration: none; font-size: 0.85rem;
+      transition: color 0.2s;
+    }
+    #topnav a:hover { color: var(--text); }
+    #topnav .title { font-size: 0.95rem; font-weight: 600; color: var(--text); }
+
+    /* ── Main layout ── */
+    #main {
+      position: relative; z-index: 5;
+      display: flex; flex: 1; overflow: hidden;
+    }
+
+    /* ── Sidebar ── */
+    #sidebar {
+      width: var(--sidebar); flex-shrink: 0;
+      display: flex; flex-direction: column;
+      border-right: 1px solid var(--border);
+      background: rgba(10,10,10,0.5);
+      backdrop-filter: blur(20px);
+      overflow: hidden;
+    }
+    #sidebar-header {
+      padding: 16px 16px 10px;
+      flex-shrink: 0;
+    }
+    #sidebar-header h2 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--subtext); margin-bottom: 10px; }
+    .sort-tabs { display: flex; gap: 6px; }
+    .sort-tab {
+      flex: 1; padding: 6px 0; text-align: center; font-size: 0.78rem;
+      border-radius: 6px; cursor: pointer; border: 1px solid var(--border);
+      color: var(--subtext); background: transparent; transition: all 0.15s;
+    }
+    .sort-tab.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .sort-tab:hover:not(.active) { border-color: #555; color: var(--text); }
+
+    #track-list {
+      flex: 1; overflow-y: auto;
+      padding: 6px 0;
+    }
+    #track-list::-webkit-scrollbar { width: 4px; }
+    #track-list::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
+
+    .track-item {
+      display: flex; align-items: center; gap: 12px;
+      padding: 8px 14px; cursor: pointer;
+      transition: background 0.15s;
+      border-left: 3px solid transparent;
+    }
+    .track-item:hover { background: rgba(255,255,255,0.05); }
+    .track-item.active {
+      border-left-color: var(--accent);
+      background: rgba(124,106,245,0.1);
+    }
+    .track-thumb {
+      width: 42px; height: 42px; border-radius: 6px;
+      object-fit: cover; flex-shrink: 0;
+      background: #222;
+    }
+    .track-meta { overflow: hidden; }
+    .track-name { font-size: 0.85rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .track-artist { font-size: 0.75rem; color: var(--subtext); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+    .track-item.active .track-name { color: var(--accent); }
+
+    /* ── Center stage ── */
+    #stage {
+      flex: 1; display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      padding: 32px 24px 24px;
+      gap: 24px;
+    }
+
+    #artwork-wrap {
+      position: relative;
+      transition: transform 0.4s cubic-bezier(0.34,1.56,0.64,1), opacity 0.3s ease;
+    }
+    #artwork-wrap.transitioning { opacity: 0; transform: scale(0.93); }
+
+    #artwork {
+      width: min(460px, calc(100vw - var(--sidebar) - 80px));
+      height: min(460px, calc(100vw - var(--sidebar) - 80px));
+      border-radius: 14px;
+      object-fit: cover;
+      display: block;
+      box-shadow: 0 0 0 0 var(--accent-dim);
+      transition: box-shadow 0.4s ease;
+    }
+    body.playing #artwork {
+      box-shadow:
+        0 0 60px 8px var(--accent-dim),
+        0 24px 80px rgba(0,0,0,0.8);
+      animation: artglow 3s ease-in-out infinite;
+    }
+    @keyframes artglow {
+      0%, 100% { box-shadow: 0 0 55px 6px var(--accent-dim), 0 24px 80px rgba(0,0,0,0.8); }
+      50%       { box-shadow: 0 0 80px 18px rgba(124,106,245,0.5), 0 24px 80px rgba(0,0,0,0.8); }
+    }
+
+    #now-playing {
+      text-align: center;
+      transition: opacity 0.3s ease;
+    }
+    #now-playing.transitioning { opacity: 0; }
+    #np-title  { font-size: 1.4rem; font-weight: 700; margin-bottom: 4px; }
+    #np-artist { font-size: 0.95rem; color: var(--subtext); }
+
+    #empty-state {
+      text-align: center; color: var(--subtext);
+    }
+    #empty-state p { font-size: 1rem; margin-bottom: 8px; }
+    #empty-state a { color: var(--accent); text-decoration: none; }
+
+    /* ── Controls bar ── */
+    #controls {
+      position: relative; z-index: 10;
+      height: var(--controls);
+      background: rgba(10,10,10,0.72);
+      backdrop-filter: blur(24px) saturate(1.2);
+      border-top: 1px solid var(--border);
+      flex-shrink: 0;
+      display: flex; flex-direction: column;
+      justify-content: center;
+      padding: 0 28px;
+      gap: 8px;
+    }
+
+    .ctrl-row {
+      display: flex; align-items: center; gap: 16px;
+    }
+    .ctrl-row.center { justify-content: center; }
+
+    .ctrl-btn {
+      background: none; border: none; cursor: pointer;
+      color: var(--subtext); padding: 6px;
+      border-radius: 50%; display: flex; align-items: center; justify-content: center;
+      transition: color 0.2s, background 0.2s, transform 0.1s;
+      flex-shrink: 0;
+    }
+    .ctrl-btn:hover { color: var(--text); background: rgba(255,255,255,0.07); }
+    .ctrl-btn:active { transform: scale(0.9); }
+    .ctrl-btn.active { color: var(--accent); }
+    .ctrl-btn svg { display: block; }
+
+    #btn-play {
+      width: 52px; height: 52px;
+      background: #fff; color: #000;
+      border-radius: 50%;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+      transition: transform 0.15s, background 0.2s;
+    }
+    #btn-play:hover { transform: scale(1.07); background: #e8e8ff; }
+    #btn-play:active { transform: scale(0.95); }
+
+    /* Progress */
+    .progress-group {
+      flex: 1; display: flex; align-items: center; gap: 10px;
+      font-size: 0.75rem; color: var(--subtext);
+      min-width: 0;
+    }
+    .time-label { flex-shrink: 0; min-width: 36px; text-align: center; font-variant-numeric: tabular-nums; }
+
+    input[type="range"] {
+      -webkit-appearance: none; appearance: none;
+      height: 3px; border-radius: 2px;
+      background: var(--border);
+      outline: none; cursor: pointer;
+      flex: 1;
+      transition: height 0.15s;
+    }
+    input[type="range"]:hover { height: 5px; }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 13px; height: 13px; border-radius: 50%;
+      background: #fff; cursor: pointer;
+      box-shadow: 0 0 4px rgba(0,0,0,0.4);
+      transition: transform 0.1s;
+    }
+    input[type="range"]::-webkit-slider-thumb:active { transform: scale(1.3); }
+    input[type="range"].vol { flex: 0 0 80px; }
+
+    #progress-bar {
+      background: linear-gradient(to right, var(--accent) var(--pct, 0%), var(--border) var(--pct, 0%));
+    }
+    #vol-bar {
+      background: linear-gradient(to right, #ccc var(--vol, 80%), var(--border) var(--vol, 80%));
+    }
+
+    /* Responsive: hide sidebar label at narrow widths */
+    @media (max-width: 640px) {
+      :root { --sidebar: 200px; }
+      #np-title { font-size: 1.1rem; }
+    }
+  </style>
+</head>
+<body>
+  <!-- Blurred background layers -->
+  <div id="bg-blur"></div>
+  <div id="bg-overlay"></div>
+
+  <!-- Top nav -->
+  <nav id="topnav">
+    <a href="/">&#8592; Generate</a>
+    <span class="title">All Tracks</span>
+    <span></span>
+  </nav>
+
+  <!-- Main area -->
+  <div id="main">
+    <!-- Sidebar: track list -->
+    <aside id="sidebar">
+      <div id="sidebar-header">
+        <h2>Library</h2>
+        <div class="sort-tabs">
+          <button class="sort-tab active" data-sort="title">Title</button>
+          <button class="sort-tab" data-sort="date">Date</button>
+        </div>
+      </div>
+      <div id="track-list"></div>
+    </aside>
+
+    <!-- Center: artwork + info -->
+    <section id="stage">
+      <div id="empty-state" style="display:none">
+        <p>No tracks found.</p>
+        <a href="/">Generate your first track &#8594;</a>
+      </div>
+
+      <div id="artwork-wrap">
+        <img id="artwork" src="" alt="Album art">
+      </div>
+
+      <div id="now-playing">
+        <div id="np-title">—</div>
+        <div id="np-artist">—</div>
+      </div>
+    </section>
+  </div>
+
+  <!-- Controls bar -->
+  <div id="controls">
+    <div class="ctrl-row center">
+      <!-- Shuffle -->
+      <button class="ctrl-btn" id="btn-shuffle" title="Shuffle">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M16.47 5.47a.75.75 0 011.06 0l2 2a.75.75 0 010 1.06l-2 2a.75.75 0 11-1.06-1.06l.72-.72H15c-.92 0-1.6.6-2.35 1.67l-.29.42C11.4 11.97 10.3 13.5 8.5 13.5H3a.75.75 0 010-1.5h5.5c.92 0 1.6-.6 2.35-1.67l.29-.42C12.1 8.53 13.2 7 15 7h2.19l-.72-.72a.75.75 0 010-1.06zm0 9a.75.75 0 011.06-1.06l2 2a.75.75 0 010 1.06l-2 2a.75.75 0 11-1.06-1.06l.72-.72H15c-1.8 0-2.9-1.53-3.85-2.91l-.29-.42C10.1 13.1 9.42 12.5 8.5 12.5H3a.75.75 0 010-1.5h5.5c1.8 0 2.9 1.53 3.85 2.91l.29.42C13.4 15.4 14.08 16 15 16h2.19l-.72-.72z"/>
+        </svg>
+      </button>
+      <!-- Prev -->
+      <button class="ctrl-btn" id="btn-prev" title="Previous">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M6 6a1 1 0 011 1v10a1 1 0 11-2 0V7a1 1 0 011-1zm3.43 1.534a1 1 0 011.538-.844l8 5a1 1 0 010 1.688l-8 5A1 1 0 019.43 18V7.534z"/>
+        </svg>
+      </button>
+      <!-- Play/Pause -->
+      <button class="ctrl-btn" id="btn-play" title="Play/Pause">
+        <svg id="icon-play" width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M8 5.14v14l11-7-11-7z"/>
+        </svg>
+        <svg id="icon-pause" width="22" height="22" viewBox="0 0 24 24" fill="currentColor" style="display:none">
+          <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
+        </svg>
+      </button>
+      <!-- Next -->
+      <button class="ctrl-btn" id="btn-next" title="Next">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M18 6a1 1 0 011 1v10a1 1 0 11-2 0V7a1 1 0 011-1zm-2.43 1.534l-8 5a1 1 0 000 1.688l8 5A1 1 0 0017 18V7.534a1 1 0 00-1.43-.9z"/>
+        </svg>
+      </button>
+
+      <!-- Progress + time -->
+      <div class="progress-group">
+        <span class="time-label" id="time-cur">0:00</span>
+        <input type="range" id="progress-bar" min="0" max="100" value="0" step="0.1">
+        <span class="time-label" id="time-dur">0:00</span>
+      </div>
+
+      <!-- Volume -->
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="#888" flex-shrink="0">
+        <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0014 7.97v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/>
+      </svg>
+      <input type="range" id="vol-bar" class="vol" min="0" max="100" value="80" step="1">
+    </div>
+  </div>
+
+  <audio id="audio"></audio>
+
+  <script>
+    const audio      = document.getElementById('audio');
+    const bgBlur     = document.getElementById('bg-blur');
+    const artImg     = document.getElementById('artwork');
+    const artWrap    = document.getElementById('artwork-wrap');
+    const npTitle    = document.getElementById('np-title');
+    const npArtist   = document.getElementById('np-artist');
+    const npBlock    = document.getElementById('now-playing');
+    const trackList  = document.getElementById('track-list');
+    const emptyState = document.getElementById('empty-state');
+    const btnPlay    = document.getElementById('btn-play');
+    const iconPlay   = document.getElementById('icon-play');
+    const iconPause  = document.getElementById('icon-pause');
+    const btnPrev    = document.getElementById('btn-prev');
+    const btnNext    = document.getElementById('btn-next');
+    const btnShuffle = document.getElementById('btn-shuffle');
+    const progressBar = document.getElementById('progress-bar');
+    const volBar     = document.getElementById('vol-bar');
+    const timeCur    = document.getElementById('time-cur');
+    const timeDur    = document.getElementById('time-dur');
+
+    let allTracks    = [];  // original order from API
+    let queue        = [];  // current playback order
+    let currentIdx   = -1;
+    let shuffled     = false;
+    let sortMode     = 'title';  // 'title' | 'date'
+    let isSeeking    = false;
+
+    // ── Utilities ──────────────────────────────────────────────────────────────
+    function fmt(secs) {
+      if (!isFinite(secs)) return '0:00';
+      const m = Math.floor(secs / 60);
+      const s = Math.floor(secs % 60).toString().padStart(2, '0');
+      return m + ':' + s;
+    }
+
+    function shuffle(arr) {
+      const a = [...arr];
+      for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+      }
+      return a;
+    }
+
+    function sortedTracks() {
+      const copy = [...allTracks];
+      if (sortMode === 'title') {
+        copy.sort((a, b) => a.title.localeCompare(b.title));
+      } else {
+        copy.sort((a, b) => b.uploaded_at - a.uploaded_at);
+      }
+      return copy;
+    }
+
+    // ── Render track list ──────────────────────────────────────────────────────
+    function renderList() {
+      const sorted = sortedTracks();
+      trackList.innerHTML = '';
+      sorted.forEach((track, i) => {
+        const div = document.createElement('div');
+        div.className = 'track-item';
+        div.dataset.id = track.id;
+        div.innerHTML = `
+          <img class="track-thumb" src="${track.artwork_url}" loading="lazy" alt="">
+          <div class="track-meta">
+            <div class="track-name">${escHtml(track.title)}</div>
+            <div class="track-artist">${escHtml(track.artist)}</div>
+          </div>`;
+        div.addEventListener('click', () => loadFromSorted(sorted, i));
+        trackList.appendChild(div);
+      });
+      highlightActive();
+    }
+
+    function escHtml(s) {
+      return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    function highlightActive() {
+      document.querySelectorAll('.track-item').forEach(el => {
+        el.classList.toggle('active', queue[currentIdx] && el.dataset.id === queue[currentIdx].id);
+      });
+    }
+
+    // ── Load a track ──────────────────────────────────────────────────────────
+    function loadFromSorted(sorted, idx) {
+      // When clicking a track: set queue = sorted order starting at that track
+      queue = sorted;
+      currentIdx = idx;
+      loadCurrent();
+    }
+
+    function loadCurrent(autoplay = true) {
+      if (currentIdx < 0 || currentIdx >= queue.length) return;
+      const track = queue[currentIdx];
+
+      // Artwork transition
+      artWrap.classList.add('transitioning');
+      npBlock.classList.add('transitioning');
+
+      setTimeout(() => {
+        artImg.src = track.artwork_url;
+        bgBlur.style.backgroundImage = `url('${track.artwork_url}')`;
+        npTitle.textContent  = track.title;
+        npArtist.textContent = track.artist;
+        artWrap.classList.remove('transitioning');
+        npBlock.classList.remove('transitioning');
+      }, 280);
+
+      audio.src = track.audio_url;
+      audio.volume = volBar.value / 100;
+      progressBar.value = 0;
+      timeCur.textContent = '0:00';
+      timeDur.textContent = '0:00';
+
+      if (autoplay) {
+        audio.play().catch(() => {});
+      }
+      highlightActive();
+    }
+
+    // ── Playback controls ─────────────────────────────────────────────────────
+    btnPlay.addEventListener('click', () => {
+      if (currentIdx === -1 && queue.length > 0) {
+        currentIdx = 0; loadCurrent(); return;
+      }
+      if (audio.paused) { audio.play().catch(() => {}); }
+      else { audio.pause(); }
+    });
+
+    btnNext.addEventListener('click', playNext);
+    btnPrev.addEventListener('click', playPrev);
+
+    function playNext() {
+      if (!queue.length) return;
+      currentIdx = (currentIdx + 1) % queue.length;
+      loadCurrent();
+    }
+    function playPrev() {
+      if (!queue.length) return;
+      if (audio.currentTime > 3) { audio.currentTime = 0; return; }
+      currentIdx = (currentIdx - 1 + queue.length) % queue.length;
+      loadCurrent();
+    }
+
+    btnShuffle.addEventListener('click', () => {
+      shuffled = !shuffled;
+      btnShuffle.classList.toggle('active', shuffled);
+      if (shuffled) {
+        // Rebuild queue shuffled, keep current track at front
+        const current = queue[currentIdx];
+        const rest = shuffle(queue.filter((_, i) => i !== currentIdx));
+        queue = current ? [current, ...rest] : rest;
+        currentIdx = 0;
+      } else {
+        // Restore sorted order, find current track
+        const current = queue[currentIdx];
+        queue = sortedTracks();
+        currentIdx = current ? queue.findIndex(t => t.id === current.id) : 0;
+        if (currentIdx === -1) currentIdx = 0;
+      }
+    });
+
+    audio.addEventListener('ended', playNext);
+
+    // ── Play/pause state sync ─────────────────────────────────────────────────
+    audio.addEventListener('play',  () => {
+      iconPlay.style.display  = 'none';
+      iconPause.style.display = 'block';
+      document.body.classList.add('playing');
+    });
+    audio.addEventListener('pause', () => {
+      iconPlay.style.display  = 'block';
+      iconPause.style.display = 'none';
+      document.body.classList.remove('playing');
+    });
+
+    // ── Progress ──────────────────────────────────────────────────────────────
+    audio.addEventListener('timeupdate', () => {
+      if (isSeeking || !isFinite(audio.duration)) return;
+      const pct = (audio.currentTime / audio.duration) * 100;
+      progressBar.value = pct;
+      progressBar.style.setProperty('--pct', pct + '%');
+      timeCur.textContent = fmt(audio.currentTime);
+    });
+    audio.addEventListener('loadedmetadata', () => {
+      timeDur.textContent = fmt(audio.duration);
+    });
+    audio.addEventListener('durationchange', () => {
+      timeDur.textContent = fmt(audio.duration);
+    });
+
+    progressBar.addEventListener('mousedown', () => { isSeeking = true; });
+    progressBar.addEventListener('input', () => {
+      const pct = progressBar.value;
+      progressBar.style.setProperty('--pct', pct + '%');
+      timeCur.textContent = fmt((pct / 100) * (audio.duration || 0));
+    });
+    progressBar.addEventListener('change', () => {
+      if (isFinite(audio.duration)) {
+        audio.currentTime = (progressBar.value / 100) * audio.duration;
+      }
+      isSeeking = false;
+    });
+
+    // ── Volume ────────────────────────────────────────────────────────────────
+    volBar.style.setProperty('--vol', '80%');
+    volBar.addEventListener('input', () => {
+      audio.volume = volBar.value / 100;
+      volBar.style.setProperty('--vol', volBar.value + '%');
+    });
+
+    // ── Sort tabs ─────────────────────────────────────────────────────────────
+    document.querySelectorAll('.sort-tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.sort-tab').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        sortMode = btn.dataset.sort;
+        const currentId = queue[currentIdx]?.id;
+        renderList();
+        if (!shuffled) {
+          queue = sortedTracks();
+          currentIdx = currentId ? queue.findIndex(t => t.id === currentId) : 0;
+          if (currentIdx === -1) currentIdx = 0;
+        }
+      });
+    });
+
+    // ── Keyboard shortcuts ────────────────────────────────────────────────────
+    document.addEventListener('keydown', e => {
+      if (e.target.tagName === 'INPUT') return;
+      if (e.code === 'Space') { e.preventDefault(); btnPlay.click(); }
+      if (e.code === 'ArrowRight') { e.preventDefault(); playNext(); }
+      if (e.code === 'ArrowLeft')  { e.preventDefault(); playPrev(); }
+    });
+
+    // ── Load tracks from API ──────────────────────────────────────────────────
+    async function init() {
+      try {
+        const res = await fetch('/tracks');
+        allTracks = await res.json();
+      } catch (e) {
+        allTracks = [];
+      }
+
+      if (!allTracks.length) {
+        document.getElementById('artwork-wrap').style.display = 'none';
+        document.getElementById('now-playing').style.display = 'none';
+        emptyState.style.display = 'block';
+        return;
+      }
+
+      queue = sortedTracks();
+      currentIdx = 0;
+      renderList();
+      // Pre-load first track (no autoplay; wait for user interaction)
+      loadCurrent(false);
+    }
+
+    init();
   </script>
 </body>
 </html>"""
