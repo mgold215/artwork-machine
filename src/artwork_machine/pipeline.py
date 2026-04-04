@@ -123,6 +123,8 @@ def run(opts: PipelineOptions) -> PipelineResult:
         # Copy deliverables to output root
         shutil.copy(album_art_path, out / "album_art.png")
         shutil.copy(thumbnail_path, out / "thumbnail.png")
+        # Preserve original audio for the All Tracks player
+        shutil.copy(opts.audio_path, out / ("audio" + opts.audio_path.suffix))
 
         # ── 4. Spotify Canvas ─────────────────────────────────────────────────
         canvas_output = out / "spotify_canvas.mp4"
