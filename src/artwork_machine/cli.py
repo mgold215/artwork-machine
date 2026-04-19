@@ -36,9 +36,12 @@ def main() -> None:
 @click.option("--no-canvas",     is_flag=True, default=False, help="Skip Spotify Canvas")
 @click.option("--no-short",      is_flag=True, default=False, help="Skip 30-second short")
 @click.option("--no-visualizer", is_flag=True, default=False, help="Skip YouTube visualizer")
+@click.option("--youtube-upload", is_flag=True, default=False,
+              help="Upload visualizer to YouTube after generation")
 def generate(
     audio_file: Path, artist: str, album: str, output: Path,
     model: str, draft: bool, no_canvas: bool, no_short: bool, no_visualizer: bool,
+    youtube_upload: bool,
 ) -> None:
     """Run the full artwork generation pipeline for AUDIO_FILE."""
     from artwork_machine.pipeline import PipelineOptions, run
@@ -51,7 +54,8 @@ def generate(
     opts = PipelineOptions(
         artist=artist, album=album, audio_path=audio_file, output_dir=output,
         draft=draft, skip_canvas=no_canvas, skip_short=no_short,
-        skip_visualizer=no_visualizer, image_model=model,
+        skip_visualizer=no_visualizer, youtube_upload=youtube_upload,
+        image_model=model,
     )
 
     try:

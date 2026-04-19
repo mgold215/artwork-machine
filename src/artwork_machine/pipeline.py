@@ -11,6 +11,7 @@ Pipeline stages
 4.  Spotify Canvas          → spotify_canvas.mp4  (720×1280, 8s loop)
 5.  30-second short         → short.mp4           (1080×1920, 30s)
 6.  YouTube visualizer      → youtube_visualizer.mp4  (1920×1080, full length)
+7.  YouTube upload (opt-in) → uploads visualizer to YouTube with auto-generated metadata
 """
 
 from __future__ import annotations
@@ -57,6 +58,7 @@ class PipelineOptions:
     skip_canvas:   bool = False
     skip_short:    bool = False
     skip_visualizer: bool = False
+    youtube_upload:  bool = False
     image_model:   str = "black-forest-labs/FLUX.1-schnell"
     status_callback: object = None  # callable(msg: str) to report progress to the web UI
 
@@ -175,9 +177,40 @@ def run(opts: PipelineOptions) -> PipelineResult:
             )
             progress.update(t6, description="[green]✓ YouTube visualizer rendered (1920×1080)")
 
+        # ── 7. YouTube upload (opt-in) ──────────────────────────────────────
+        youtube_url = None
+        if opts.youtube_upload and not opts.skip_visualizer:
+            try:
+                from artwork_machine.upload.metadata import generate_metadata
+                from artwork_machine.upload.youtube import upload_video
+
+                cb("Generating YouTube metadata…")
+                t7 = progress.add_task("Uploading to YouTube …", total=None)
+                yt_metadata = generate_metadata(
+                    artist=opts.artist,
+                    album=opts.album,
+                    direction=direction,
+                    features=features,
+                )
+
+                cb("Uploading to YouTube…")
+                youtube_url = upload_video(
+                    video_path=str(viz_output),
+                    metadata=yt_metadata,
+                    thumbnail_path=str(out / "thumbnail.png"),
+                )
+                if youtube_url:
+                    progress.update(t7, description=f"[green]✓ Uploaded to YouTube: {youtube_url}")
+                else:
+                    progress.update(t7, description="[yellow]⚠ YouTube upload skipped (missing credentials)")
+            except Exception as e:
+                progress.update(t7, description=f"[red]✗ YouTube upload failed: {e}")
+
     elapsed = time.perf_counter() - t0
     console.print(f"\n[bold green]✓ Pipeline complete in {elapsed:.1f}s[/bold green]")
     console.print(f"  Output: [cyan]{out}[/cyan]")
+    if youtube_url:
+        console.print(f"  YouTube: [cyan]{youtube_url}[/cyan]")
 
     return PipelineResult(
         album_art=out / "album_art.png",
